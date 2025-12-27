@@ -13,8 +13,10 @@ ARTIFACT_PATH = os.environ.get("MODEL_PATH", "artifacts/model.pkl")
 
 app = FastAPI(title="Heart Disease Model API")
 
+
 class PredictRequest(BaseModel):
     instances: list
+
 
 def load_model(path=ARTIFACT_PATH):
     if not os.path.exists(path):
@@ -22,14 +24,17 @@ def load_model(path=ARTIFACT_PATH):
     data = joblib.load(path)
     return data["pipeline"]
 
+
 try:
     MODEL = load_model()
 except Exception:
     MODEL = None
 
+
 @app.get("/health")
 def health():
     return {"status": "ok", "model_loaded": MODEL is not None}
+
 
 @app.post("/predict")
 def predict(req: PredictRequest):

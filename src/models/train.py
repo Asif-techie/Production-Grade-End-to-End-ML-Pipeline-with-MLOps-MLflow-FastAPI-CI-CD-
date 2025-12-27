@@ -16,6 +16,7 @@ from src.pipeline import create_pipeline
 ARTIFACT_DIR = "artifacts"
 MODEL_PATH = os.path.join(ARTIFACT_DIR, "model.pkl")
 
+
 def train(save_path=MODEL_PATH, k=10):
     df = load_data()
     if "num" not in df.columns:
@@ -34,6 +35,7 @@ def train(save_path=MODEL_PATH, k=10):
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     joblib.dump({"pipeline": pipeline, "X_test": X_test, "y_test": y_test}, save_path)
     print(f"Model and test split saved to: {save_path}")
+
 
 if __name__ == "__main__":
     train()

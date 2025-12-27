@@ -8,9 +8,10 @@ Run ID, Name, Accuracy, F1 Score, ROC AUC, Start Time, End Time.
 Sorted by Start Time (newest first), timestamps shown in IST.
 """
 
+from datetime import timedelta, timezone
+
 import mlflow
 from tabulate import tabulate
-from datetime import timezone, timedelta
 
 # -----------------------------
 # Config
@@ -47,25 +48,43 @@ runs = runs.sort_values(by="start_time", ascending=False)
 # Prepare table
 # -----------------------------
 table = []
-headers = ["Run ID", "Name", "Accuracy", "F1 Score", "ROC AUC", "Start Time (IST)", "End Time (IST)"]
+headers = [
+    "Run ID",
+    "Name",
+    "Accuracy",
+    "F1 Score",
+    "ROC AUC",
+    "Start Time (IST)",
+    "End Time (IST)",
+]
 
 for idx, row in runs.iterrows():
     start_ts = row.get("start_time", None)
     end_ts = row.get("end_time", None)
 
     # Convert timestamps to IST
-    start_time = start_ts.tz_convert(IST).strftime("%Y-%m-%d %H:%M:%S") if start_ts is not None else "-"
-    end_time = end_ts.tz_convert(IST).strftime("%Y-%m-%d %H:%M:%S") if end_ts is not None else "-"
+    start_time = (
+        start_ts.tz_convert(IST).strftime("%Y-%m-%d %H:%M:%S")
+        if start_ts is not None
+        else "-"
+    )
+    end_time = (
+        end_ts.tz_convert(IST).strftime("%Y-%m-%d %H:%M:%S")
+        if end_ts is not None
+        else "-"
+    )
 
-    table.append([
-        row["run_id"],
-        row.get("tags.mlflow.runName", ""),
-        round(row.get("metrics.accuracy", float("nan")), 3),
-        round(row.get("metrics.f1_score", float("nan")), 3),
-        round(row.get("metrics.roc_auc", float("nan")), 3),
-        start_time,
-        end_time
-    ])
+    table.append(
+        [
+            row["run_id"],
+            row.get("tags.mlflow.runName", ""),
+            round(row.get("metrics.accuracy", float("nan")), 3),
+            round(row.get("metrics.f1_score", float("nan")), 3),
+            round(row.get("metrics.roc_auc", float("nan")), 3),
+            start_time,
+            end_time,
+        ]
+    )
 
 # -----------------------------
 # Print table
