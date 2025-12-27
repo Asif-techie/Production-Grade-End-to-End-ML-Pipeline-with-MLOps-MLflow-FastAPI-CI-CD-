@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  build-test-train:
+  ci:
     runs-on: ubuntu-latest
 
     steps:
@@ -18,7 +18,6 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: '3.10'
-        cache: 'pip'
 
     - name: Install dependencies
       run: |
@@ -26,25 +25,15 @@ jobs:
         pip install -r requirements.txt
         pip install -r requirements-dev.txt
 
-    - name: Lint code
+    - name: Run linting
       run: |
         flake8 src tests
         black --check src tests
 
-    - name: Run unit tests
+    - name: Run tests
       run: |
-        pytest tests/ --disable-warnings
+        pytest tests/
 
-    - name: CI Model Training
-      env:
-        CI: true
+    - name: Train model (CI validation)
       run: |
         python src/train.py
-
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: ci-artifacts
-        path: |
-          artifacts/
-          mlruns/
