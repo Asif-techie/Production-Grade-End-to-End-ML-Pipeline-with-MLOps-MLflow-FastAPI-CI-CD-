@@ -4,5 +4,8 @@ flake8==6.1.0
 black==23.12.1
 isort==5.12.0
 pre-commit==3.6.0
-
+black
+flake8
+isort
+pytest
 

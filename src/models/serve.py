@@ -2,11 +2,12 @@
 Simple FastAPI server to serve predictions using the saved pipeline.
 POST /predict with JSON: {"instances": [[...], [...]]}
 """
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+import os
+
 import joblib
 import numpy as np
-import os
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 
 ARTIFACT_PATH = os.environ.get("MODEL_PATH", "artifacts/model.pkl")
 

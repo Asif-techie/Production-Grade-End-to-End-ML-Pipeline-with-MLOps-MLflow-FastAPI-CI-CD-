@@ -12,21 +12,33 @@ Functions:
 """
 
 import os
-import pandas as pd
-import numpy as np
-import requests
+
 import matplotlib.pyplot as plt
-import seaborn as sns
 import mlflow
+import numpy as np
+import pandas as pd
+import requests
+import seaborn as sns
 
 UCI_DOWNLOAD_URL = "https://archive.ics.uci.edu/dataset/45/heart+disease"
 LOCAL_DATA_PATH = "data/heart.csv"
 EDA_DIR = "data/eda"
 
 COLS = [
-    "age","sex","cp","trestbps","chol","fbs",
-    "restecg","thalach","exang","oldpeak",
-    "slope","ca","thal","target"
+    "age",
+    "sex",
+    "cp",
+    "trestbps",
+    "chol",
+    "fbs",
+    "restecg",
+    "thalach",
+    "exang",
+    "oldpeak",
+    "slope",
+    "ca",
+    "thal",
+    "target",
 ]
 
 
@@ -52,6 +64,7 @@ def load_raw_df() -> pd.DataFrame:
     try:
         print("🔌 Trying ucimlrepo.fetch_ucirepo(id=45)...")
         from ucimlrepo import fetch_ucirepo
+
         ds = fetch_ucirepo(id=45)
         df = pd.concat([ds.data.features, ds.data.targets], axis=1)
 
@@ -79,7 +92,9 @@ def load_raw_df() -> pd.DataFrame:
         df = download_from_uci(LOCAL_DATA_PATH)
         return df
     except Exception as e:
-        raise RuntimeError("Failed to obtain dataset from API, local file, and UCI download") from e
+        raise RuntimeError(
+            "Failed to obtain dataset from API, local file, and UCI download"
+        ) from e
 
 
 def clean_df(df: pd.DataFrame) -> pd.DataFrame:
@@ -110,7 +125,6 @@ def perform_eda(df: pd.DataFrame, save_dir: str = EDA_DIR):
     print("📊 Performing EDA and logging to MLflow (nested run)...")
 
     with mlflow.start_run(run_name="EDA", nested=True):
-
         mlflow.log_param("eda_rows", df.shape[0])
         mlflow.log_param("eda_columns", df.shape[1])
 

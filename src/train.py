@@ -9,19 +9,20 @@ Main training script:
  - dynamically adjusts n_iter for RandomizedSearchCV to avoid UserWarnings
 """
 
+import datetime
 import os
 import tempfile
+from math import prod
+
 import mlflow
 import mlflow.sklearn
 import numpy as np
-from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
-from pipeline import pipelines, param_spaces, search_type
+from sklearn.model_selection import GridSearchCV, RandomizedSearchCV, train_test_split
+
 from data import load_heart_data
+from pipeline import param_spaces, pipelines, search_type
 from utils_plot import save_cm, save_roc
-from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
-from math import prod
-import datetime
 
 # Experiment configuration
 EXPERIMENT_NAME = "HeartDisease_Models"
@@ -68,11 +69,7 @@ def main():
             # Determine n_iter dynamically to avoid warning
             if Searcher == GridSearchCV:
                 search = Searcher(
-                    pipe,
-                    params,
-                    cv=CV_FOLDS,
-                    n_jobs=N_JOBS,
-                    scoring="roc_auc"
+                    pipe, params, cv=CV_FOLDS, n_jobs=N_JOBS, scoring="roc_auc"
                 )
             else:
                 max_combos = total_param_combinations(params)
@@ -84,13 +81,15 @@ def main():
                     cv=CV_FOLDS,
                     n_jobs=N_JOBS,
                     scoring="roc_auc",
-                    random_state=RANDOM_STATE
+                    random_state=RANDOM_STATE,
                 )
 
             # Nested MLflow run for each model
             model_start = datetime.datetime.now()
             with mlflow.start_run(run_name=name, nested=True):
-                mlflow.log_param("start_time", model_start.strftime("%Y-%m-%d %H:%M:%S"))
+                mlflow.log_param(
+                    "start_time", model_start.strftime("%Y-%m-%d %H:%M:%S")
+                )
 
                 search.fit(X_train, y_train)
                 best_model = search.best_estimator_
@@ -142,7 +141,9 @@ def main():
         # Parent run end time
         parent_end = datetime.datetime.now()
         mlflow.log_param("main_end_time", parent_end.strftime("%Y-%m-%d %H:%M:%S"))
-        print(f"\n✅ All runs completed. Main run started at {parent_start}, ended at {parent_end}")
+        print(
+            f"\n✅ All runs completed. Main run started at {parent_start}, ended at {parent_end}"
+        )
 
 
 if __name__ == "__main__":

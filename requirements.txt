@@ -8,4 +8,5 @@ imbalanced-learn==0.12.2
 ucimlrepo==0.0.6
 xgboost==2.0.3
 catboost==1.2.3
+flake8
 

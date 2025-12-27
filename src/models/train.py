@@ -6,6 +6,7 @@ Train script:
 - fits and saves model artifact (joblib) to artifacts/model.pkl
 """
 import os
+
 import joblib
 from sklearn.model_selection import train_test_split
 
