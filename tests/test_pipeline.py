@@ -1,13 +1,12 @@
-# tests/test_pipeline.py
-
 import sys
 import os
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
+sys.path.append(
+    os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+)  # noqa: E402
+from src.pipeline import pipelines  # noqa: E402
 
-from pipeline import pipelines  # direct import
 
 def test_pipeline_keys():
-    expected_keys = ["LogisticRegression", "RandomForest"]
-    for key in expected_keys:
-        assert key in pipelines
+    assert "LogisticRegression" in pipelines
+    assert "RandomForest" in pipelines
