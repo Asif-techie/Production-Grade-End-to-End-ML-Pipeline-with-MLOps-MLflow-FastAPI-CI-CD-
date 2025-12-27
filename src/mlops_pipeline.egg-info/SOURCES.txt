@@ -1,0 +1,8 @@
+setup.py
+src/mlops_pipeline.egg-info/PKG-INFO
+src/mlops_pipeline.egg-info/SOURCES.txt
+src/mlops_pipeline.egg-info/dependency_links.txt
+src/mlops_pipeline.egg-info/top_level.txt
+tests/test_api.py
+tests/test_data.py
+tests/test_pipeline.py
