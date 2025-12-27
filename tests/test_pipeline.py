@@ -1,5 +1,4 @@
 # tests/test_pipeline.py
-import pytest
 
 from src.pipeline import pipelines
 

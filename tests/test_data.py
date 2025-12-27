@@ -1,5 +1,4 @@
 # tests/test_data.py
-import pytest
 
 from src.data import load_heart_data
 

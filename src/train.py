@@ -16,9 +16,8 @@ from math import prod
 
 import mlflow
 import mlflow.sklearn
-import numpy as np
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
-from sklearn.model_selection import GridSearchCV, RandomizedSearchCV, train_test_split
+from sklearn.model_selection import GridSearchCV, train_test_split
 
 from data import load_heart_data
 from pipeline import param_spaces, pipelines, search_type
