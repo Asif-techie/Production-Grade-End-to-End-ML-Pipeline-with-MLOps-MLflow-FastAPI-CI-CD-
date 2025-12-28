@@ -7,3 +7,4 @@ seaborn
 catboost
 joblib
 requests
+imbalanced-learn
