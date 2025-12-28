@@ -1,10 +1,13 @@
-pandas
 numpy
+pandas
 scikit-learn
+imbalanced-learn
+xgboost
+catboost
 mlflow
 matplotlib
 seaborn
-catboost
 joblib
 requests
-imbalanced-learn
+fastapi
+uvicorn
