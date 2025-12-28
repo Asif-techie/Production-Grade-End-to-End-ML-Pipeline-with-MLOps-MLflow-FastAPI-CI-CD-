@@ -21,10 +21,7 @@ def train(save_path=MODEL_PATH, k=10):
     pipeline.fit(X_train, y_train)
 
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    joblib.dump(
-        {"pipeline": pipeline, "X_test": X_test, "y_test": y_test},
-        save_path
-    )
+    joblib.dump({"pipeline": pipeline, "X_test": X_test, "y_test": y_test}, save_path)
     print(f"Model and test split saved to: {save_path}")
 
 
