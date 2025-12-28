@@ -1,10 +1,9 @@
 pandas
 numpy
 scikit-learn
-joblib
 mlflow
-fastapi
-uvicorn
-pytest
-flake8
-
+matplotlib
+seaborn
+catboost
+joblib
+requests
