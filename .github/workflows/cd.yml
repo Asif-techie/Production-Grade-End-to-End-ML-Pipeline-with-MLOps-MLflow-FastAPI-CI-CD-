@@ -1,40 +1,36 @@
-name: CD - Build & Deploy to Azure
+name: CD - Train & Log Models
 
 on:
   push:
-    branches: [ main ]
+    branches: [ "main" ]
 
 jobs:
-  deploy:
+  train:
     runs-on: ubuntu-latest
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Azure Login
-      uses: azure/login@v2
+    - name: Setup Python
+      uses: actions/setup-python@v5
       with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
+        python-version: "3.10"
 
-    - name: Login to Azure Container Registry
+    - name: Install dependencies
       run: |
-        az acr login --name ${{ secrets.ACR_NAME }}
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
 
-    - name: Build Docker image
+    - name: Train models and log to MLflow
+      env:
+        MLFLOW_TRACKING_URI: file:///tmp/mlruns
       run: |
-        docker build \
-          -t ${{ secrets.ACR_NAME }}.azurecr.io/heart-api:latest .
+        python src/train.py
 
-    - name: Push Docker image
-      run: |
-        docker push \
-          ${{ secrets.ACR_NAME }}.azurecr.io/heart-api:latest
-
-    - name: Deploy to Azure App Service
-      run: |
-        az webapp config container set \
-          --name ${{ secrets.APP_NAME }} \
-          --resource-group ${{ secrets.RESOURCE_GROUP }} \
-          --docker-custom-image-name ${{ secrets.ACR_NAME }}.azurecr.io/heart-api:latest \
-          --docker-registry-server-url https://${{ secrets.ACR_NAME }}.azurecr.io
+    - name: Upload MLflow artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: mlflow-artifacts
+        path: |
+          /tmp/mlruns

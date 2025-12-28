@@ -3,8 +3,9 @@ src/train.py
 
 Main training script:
  - wraps entire process in a parent MLflow run
- - calls data.load_heart_data(run_eda=True) (EDA will run as a nested MLflow child run)
- - for each pipeline, performs hyperparameter search and logs model, metrics, and artifacts in nested runs
+ - calls data.load_heart_data(run_eda=True) (EDA runs as nested MLflow run)
+ - performs hyperparameter search per pipeline
+ - logs metrics, plots, and models correctly to MLflow
 """
 
 import os
@@ -12,14 +13,20 @@ import tempfile
 import mlflow
 import mlflow.sklearn
 import numpy as np
+
+from math import prod
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
+from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
+
 from pipeline import pipelines, param_spaces, search_type
 from data import load_heart_data
 from utils_plot import save_cm, save_roc
-from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 
+
+# -------------------------
 # Experiment configuration
+# -------------------------
 EXPERIMENT_NAME = "HeartDisease_Models"
 mlflow.set_experiment(EXPERIMENT_NAME)
 
@@ -27,22 +34,39 @@ N_JOBS = -1
 CV_FOLDS = 5
 RANDOM_STATE = 42
 
+
+def total_param_combinations(param_grid):
+    """Calculate total number of parameter combinations."""
+    sizes = [len(v) for v in param_grid.values()]
+    return prod(sizes) if sizes else 1
+
+
 def main():
     with mlflow.start_run(run_name="Main_Training_Run"):
-        # Load data and run EDA (EDA will create nested run)
+
+        # -------------------------
+        # Load & prepare data
+        # -------------------------
         X, y, _ = load_heart_data(run_eda=True)
 
-        # Train/test split
         X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=RANDOM_STATE, stratify=y
+            X,
+            y,
+            test_size=0.2,
+            random_state=RANDOM_STATE,
+            stratify=y
         )
 
         mlflow.log_param("train_rows", X_train.shape[0])
         mlflow.log_param("test_rows", X_test.shape[0])
+        mlflow.log_param("cv_folds", CV_FOLDS)
 
+        # -------------------------
         # Iterate over pipelines
+        # -------------------------
         for name, pipe in pipelines.items():
-            print(f"\n🔹 Starting hyperparameter search for {name}")
+            print(f"\n🔹 Training model: {name}")
+
             Searcher = search_type.get(name)
             params = param_spaces.get(name, {})
 
@@ -50,20 +74,44 @@ def main():
                 print(f"⚠ No searcher defined for {name}. Skipping.")
                 continue
 
-            # choose Grid vs Randomized
+            # -------------------------
+            # Configure search
+            # -------------------------
             if Searcher == GridSearchCV:
-                search = Searcher(pipe, params, cv=CV_FOLDS, n_jobs=N_JOBS, scoring="roc_auc")
+                search = Searcher(
+                    estimator=pipe,
+                    param_grid=params,
+                    cv=CV_FOLDS,
+                    n_jobs=N_JOBS,
+                    scoring="roc_auc"
+                )
             else:
-                search = Searcher(pipe, params, n_iter=25, cv=CV_FOLDS, n_jobs=N_JOBS, scoring="roc_auc", random_state=RANDOM_STATE)
+                max_combos = total_param_combinations(params)
+                n_iter = min(25, max_combos)
 
-            # nested run for model
+                search = Searcher(
+                    estimator=pipe,
+                    param_distributions=params,
+                    n_iter=n_iter,
+                    cv=CV_FOLDS,
+                    n_jobs=N_JOBS,
+                    scoring="roc_auc",
+                    random_state=RANDOM_STATE
+                )
+
+            # -------------------------
+            # Nested MLflow run
+            # -------------------------
             with mlflow.start_run(run_name=name, nested=True):
-                # Fit
+
                 search.fit(X_train, y_train)
                 best_model = search.best_estimator_
 
-                # Predictions & scores
+                # -------------------------
+                # Predictions
+                # -------------------------
                 y_pred = best_model.predict(X_test)
+
                 try:
                     y_score = best_model.predict_proba(X_test)[:, 1]
                 except Exception:
@@ -72,23 +120,28 @@ def main():
                     except Exception:
                         y_score = y_pred
 
+                # -------------------------
                 # Metrics
+                # -------------------------
                 acc = accuracy_score(y_test, y_pred)
                 f1 = f1_score(y_test, y_pred)
                 roc = roc_auc_score(y_test, y_score)
 
-                # Log best params
-                best_params = search.best_params_
-                for k, v in best_params.items():
-                    mlflow.log_param(k, v)
-
-                # Log metrics
                 mlflow.log_metric("accuracy", acc)
                 mlflow.log_metric("f1_score", f1)
                 mlflow.log_metric("roc_auc", roc)
 
-                # Save artifacts
+                # -------------------------
+                # Best parameters
+                # -------------------------
+                for k, v in search.best_params_.items():
+                    mlflow.log_param(k, v)
+
+                # -------------------------
+                # Save plots as artifacts
+                # -------------------------
                 tmpdir = tempfile.mkdtemp()
+
                 cm_path = os.path.join(tmpdir, f"{name}_cm.png")
                 save_cm(y_test, y_pred, cm_path)
                 mlflow.log_artifact(cm_path, artifact_path="artifacts")
@@ -97,12 +150,23 @@ def main():
                 save_roc(y_test, y_score, roc_path)
                 mlflow.log_artifact(roc_path, artifact_path="artifacts")
 
-                # Log the model
-                mlflow.sklearn.log_model(best_model, artifact_path=f"models/{name}")
+                # -------------------------
+                # ✅ Correct MLflow model logging
+                # -------------------------
+                mlflow.sklearn.log_model(
+                    sk_model=best_model,
+                    artifact_path="model",
+                    registered_model_name=name
+                )
 
-                print(f"{name} → Accuracy={acc:.3f}, F1={f1:.3f}, ROC_AUC={roc:.3f}")
+                print(
+                    f"{name} → "
+                    f"Accuracy={acc:.3f}, "
+                    f"F1={f1:.3f}, "
+                    f"ROC_AUC={roc:.3f}"
+                )
 
-        print("\n✅ All model runs complete. Check MLflow UI for details.")
+        print("\n✅ All models trained and logged successfully.")
 
 
 if __name__ == "__main__":
