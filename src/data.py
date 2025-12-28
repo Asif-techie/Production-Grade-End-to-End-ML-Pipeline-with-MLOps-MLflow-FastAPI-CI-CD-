@@ -3,12 +3,13 @@ src/data.py
 
 Data acquisition (API-first), fallback to local CSV, cleaning, EDA with MLflow logging.
 
-Functions:
-- download_from_uci(save_path): download dataset from UCI and save locally
-- load_raw_df(): try ucimlrepo -> local -> UCI download
-- clean_df(df): clean and preprocess dataframe
-- perform_eda(df, save_dir): create EDA plots and log them into MLflow as a nested run
-- load_heart_data(run_eda=True): top-level loader returning X, y, df
+Features:
+- API → local → UCI fallback loading
+- Safe pandas operations (NO chained assignment)
+- Print first 5 rows (raw & cleaned)
+- EDA visualizations
+- MLflow nested runs
+- CI-safe & pandas 3.0 compatible
 """
 
 import os
@@ -19,114 +20,128 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import mlflow
 
-UCI_DOWNLOAD_URL = "https://archive.ics.uci.edu/ml/machine-learning-databases/heart-disease/processed.cleveland.data"
+# =========================
+# Constants
+# =========================
+UCI_DOWNLOAD_URL = (
+    "https://archive.ics.uci.edu/ml/machine-learning-databases/"
+    "heart-disease/processed.cleveland.data"
+)
+
 LOCAL_DATA_PATH = "data/heart.csv"
 EDA_DIR = "data/eda"
 
 COLS = [
-    "age","sex","cp","trestbps","chol","fbs",
-    "restecg","thalach","exang","oldpeak",
-    "slope","ca","thal","target"
+    "age", "sex", "cp", "trestbps", "chol", "fbs",
+    "restecg", "thalach", "exang", "oldpeak",
+    "slope", "ca", "thal", "target"
 ]
 
-
+# =========================
+# Data acquisition
+# =========================
 def download_from_uci(save_path: str = LOCAL_DATA_PATH) -> pd.DataFrame:
-    """Download the UCI processed Cleveland data and save as CSV with standard column names."""
+    """Download dataset from UCI and save locally."""
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    print("🌐 Downloading dataset from UCI:", UCI_DOWNLOAD_URL)
+    print("🌐 Downloading dataset from UCI...")
+
     resp = requests.get(UCI_DOWNLOAD_URL, timeout=15)
     resp.raise_for_status()
-    # save raw content to CSV path
+
     with open(save_path, "wb") as f:
         f.write(resp.content)
+
     df = pd.read_csv(save_path, header=None)
-    if df.shape[1] == 14:
-        df.columns = COLS
-    else:
-        df.columns = COLS
-    print(f"✅ Downloaded and saved to {save_path}")
+    df.columns = COLS
+
+    print(f"✅ Dataset downloaded and saved to {save_path}")
     return df
 
 
 def load_raw_df() -> pd.DataFrame:
     """
-    Obtain raw DataFrame using:
-      1) ucimlrepo.fetch_ucirepo(id=45) if available
-      2) local CSV at LOCAL_DATA_PATH
-      3) download from UCI
+    Load raw dataset using priority:
+    1) ucimlrepo API
+    2) local CSV
+    3) UCI download
     """
-    # 1) try ucimlrepo
+    # 1️⃣ ucimlrepo
     try:
-        print("🔌 Trying ucimlrepo.fetch_ucirepo(id=45)...")
-        from ucimlrepo import fetch_ucirepo  # lazy import
+        print("🔌 Trying ucimlrepo API...")
+        from ucimlrepo import fetch_ucirepo
+
         ds = fetch_ucirepo(id=45)
         df = pd.concat([ds.data.features, ds.data.targets], axis=1)
-        if df.shape[1] == 14:
-            df.columns = COLS
-        print("✅ Loaded dataset from ucimlrepo API.")
-        # save local copy
+        df.columns = COLS
+
         os.makedirs(os.path.dirname(LOCAL_DATA_PATH), exist_ok=True)
         df.to_csv(LOCAL_DATA_PATH, index=False)
-        return df
-    except Exception as e:
-        print("⚠ ucimlrepo load failed:", e)
 
-    # 2) local
+        print("✅ Loaded dataset from ucimlrepo")
+        return df
+
+    except Exception as e:
+        print("⚠ ucimlrepo failed:", e)
+
+    # 2️⃣ local CSV
     if os.path.exists(LOCAL_DATA_PATH):
-        print("📂 Loading dataset from local CSV:", LOCAL_DATA_PATH)
+        print("📂 Loading dataset from local CSV")
         df = pd.read_csv(LOCAL_DATA_PATH, header=None)
-        if df.shape[1] == 14:
-            df.columns = COLS
-        else:
-            df.columns = COLS
+        df.columns = COLS
         return df
 
-    # 3) download
-    try:
-        df = download_from_uci(LOCAL_DATA_PATH)
-        return df
-    except Exception as e:
-        raise RuntimeError("Failed to obtain dataset from API, local file, and UCI download") from e
+    # 3️⃣ download
+    print("⬇ Downloading dataset from UCI")
+    return download_from_uci(LOCAL_DATA_PATH)
 
-
+# =========================
+# Data cleaning
+# =========================
 def clean_df(df: pd.DataFrame) -> pd.DataFrame:
-    """Clean dataframe: replace ?, convert numeric, impute, binary target, drop NA."""
+    """
+    Clean dataframe:
+    - Replace '?' with NaN
+    - Convert all columns to numeric
+    - Impute ca & thal with mode
+    - Convert target to binary
+    - Drop remaining NaNs
+    """
     df = df.copy()
 
-    # Replace missing marker and coerce numeric
+    # Replace missing marker
     df = df.replace("?", np.nan)
+
+    # Convert all columns to numeric
     for col in df.columns:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    # Impute 'ca' and 'thal' using mode where present
-    for col in ("ca", "thal"):
-        if col in df.columns:
-            if df[col].isna().any():
-                mode_val = df[col].mode().iloc[0]
-                df[col] = df[col].fillna(mode_val)
+    # Safe imputation (NO inplace=True)
+    for col in ["ca", "thal"]:
+        if col in df.columns and df[col].isna().any():
+            mode_val = df[col].mode().iloc[0]
+            df[col] = df[col].fillna(mode_val)
 
-    # Convert target: 0 -> 0, 1-4 -> 1
-    if "target" in df.columns:
-        df["target"] = df["target"].apply(lambda x: 1 if x > 0 else 0)
+    # Binary target conversion
+    df["target"] = df["target"].apply(lambda x: 1 if x > 0 else 0)
 
-    # Drop remaining NA rows
+    # Drop remaining missing values
     df = df.dropna().reset_index(drop=True)
+
     return df
 
-
+# =========================
+# EDA & Visualization
+# =========================
 def perform_eda(df: pd.DataFrame, save_dir: str = EDA_DIR):
     """
-    Produce EDA artifacts and log them into MLflow as a nested run.
-    Creates histograms for numeric features, correlation heatmap, and class-balance plot.
-    NOTE: This function starts a nested MLflow run (nested=True) and therefore should be invoked
-    inside a parent mlflow.start_run(...) if you want it linked to a parent run.
+    Perform EDA and log artifacts to MLflow (nested run).
     """
     os.makedirs(save_dir, exist_ok=True)
-    print("📊 Performing EDA and logging to MLflow (nested run)...")
+    print("📊 Performing EDA...")
 
     with mlflow.start_run(run_name="EDA", nested=True):
-        mlflow.log_param("eda_rows", df.shape[0])
-        mlflow.log_param("eda_columns", df.shape[1])
+        mlflow.log_param("rows", df.shape[0])
+        mlflow.log_param("columns", df.shape[1])
 
         numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
 
@@ -135,49 +150,67 @@ def perform_eda(df: pd.DataFrame, save_dir: str = EDA_DIR):
             plt.figure(figsize=(6, 4))
             df[col].hist(bins=20)
             plt.title(f"Histogram - {col}")
-            plot_path = os.path.join(save_dir, f"hist_{col}.png")
-            plt.savefig(plot_path, bbox_inches="tight")
+            path = os.path.join(save_dir, f"hist_{col}.png")
+            plt.savefig(path, bbox_inches="tight")
             plt.close()
-            mlflow.log_artifact(plot_path, artifact_path="eda_plots")
+            mlflow.log_artifact(path, artifact_path="eda")
 
         # Correlation heatmap
-        if len(numeric_cols) > 1:
-            plt.figure(figsize=(10, 8))
-            sns.heatmap(df[numeric_cols].corr(), annot=False, cmap="coolwarm")
-            plt.title("Correlation Heatmap")
-            corr_path = os.path.join(save_dir, "correlation_heatmap.png")
-            plt.savefig(corr_path, bbox_inches="tight")
-            plt.close()
-            mlflow.log_artifact(corr_path, artifact_path="eda_plots")
+        plt.figure(figsize=(10, 8))
+        sns.heatmap(df[numeric_cols].corr(), cmap="coolwarm")
+        plt.title("Correlation Heatmap")
+        corr_path = os.path.join(save_dir, "correlation_heatmap.png")
+        plt.savefig(corr_path, bbox_inches="tight")
+        plt.close()
+        mlflow.log_artifact(corr_path, artifact_path="eda")
 
         # Class balance
-        if "target" in df.columns:
-            plt.figure(figsize=(5, 4))
-            df["target"].value_counts().sort_index().plot(kind="bar")
-            plt.title("Target Class Balance (0=Healthy,1=Disease)")
-            balance_path = os.path.join(save_dir, "class_balance.png")
-            plt.savefig(balance_path, bbox_inches="tight")
-            plt.close()
-            mlflow.log_artifact(balance_path, artifact_path="eda_plots")
+        plt.figure(figsize=(5, 4))
+        df["target"].value_counts().sort_index().plot(kind="bar")
+        plt.title("Target Class Balance")
+        balance_path = os.path.join(save_dir, "class_balance.png")
+        plt.savefig(balance_path, bbox_inches="tight")
+        plt.close()
+        mlflow.log_artifact(balance_path, artifact_path="eda")
 
-    print("✅ EDA artifacts logged to MLflow (child run 'EDA').")
+    print("✅ EDA artifacts logged to MLflow")
 
-
-def load_heart_data(run_eda: bool = True):
+# =========================
+# High-level loader
+# =========================
+def load_heart_data(run_eda: bool = True, verbose: bool = True):
     """
-    High-level loader for training:
-    - obtains raw df (API/local/download)
-    - cleans it
-    - optionally runs EDA (which will create a nested MLflow run)
-    Returns: X, y, df
+    Load, clean, optionally visualize, and return X, y, df.
     """
     raw = load_raw_df()
+
+    if verbose:
+        print("\n📌 RAW DATA (first 5 rows):")
+        print(raw.head())
+
     df = clean_df(raw)
 
+    if verbose:
+        print("\n🧹 CLEANED DATA (first 5 rows):")
+        print(df.head())
+
     if run_eda:
-        # perform_eda will create a nested MLflow run
         perform_eda(df)
 
     X = df.drop(columns=["target"])
     y = df["target"].copy()
+
     return X, y, df
+
+# =========================
+# Script entry point
+# =========================
+if __name__ == "__main__":
+    mlflow.set_experiment("heart-disease-data")
+
+    with mlflow.start_run(run_name="data_pipeline"):
+        X, y, df = load_heart_data(run_eda=True, verbose=True)
+
+        print("\n📊 Final dataset shape:", df.shape)
+        print("\n🎯 Target distribution:")
+        print(y.value_counts())
