@@ -5,11 +5,14 @@ Main training script:
  - wraps entire process in a parent MLflow run
  - calls data.load_heart_data(run_eda=True) (EDA runs as nested MLflow run)
  - performs hyperparameter search per pipeline
- - logs metrics, plots, and models correctly to MLflow
+ - logs metrics, plots, and models to MLflow
+ - exports BEST model locally for deployment (CRITICAL)
 """
 
 import os
 import tempfile
+import mlflow
+import joblib
 import mlflow
 import mlflow.sklearn
 import numpy as np
@@ -34,6 +37,9 @@ N_JOBS = -1
 CV_FOLDS = 5
 RANDOM_STATE = 42
 
+ARTIFACT_DIR = "artifacts"
+os.makedirs(ARTIFACT_DIR, exist_ok=True)
+
 
 def total_param_combinations(param_grid):
     """Calculate total number of parameter combinations."""
@@ -42,6 +48,10 @@ def total_param_combinations(param_grid):
 
 
 def main():
+    best_overall_model = None
+    best_overall_score = -1
+    best_overall_name = None
+
     with mlflow.start_run(run_name="Main_Training_Run"):
 
         # -------------------------
@@ -138,7 +148,7 @@ def main():
                     mlflow.log_param(k, v)
 
                 # -------------------------
-                # Save plots as artifacts
+                # Save plots
                 # -------------------------
                 tmpdir = tempfile.mkdtemp()
 
@@ -151,13 +161,21 @@ def main():
                 mlflow.log_artifact(roc_path, artifact_path="artifacts")
 
                 # -------------------------
-                # ✅ Correct MLflow model logging
+                # MLflow model logging
                 # -------------------------
                 mlflow.sklearn.log_model(
                     sk_model=best_model,
                     artifact_path="model",
                     registered_model_name=name
                 )
+
+                # -------------------------
+                # Track BEST overall model
+                # -------------------------
+                if roc > best_overall_score:
+                    best_overall_score = roc
+                    best_overall_model = best_model
+                    best_overall_name = name
 
                 print(
                     f"{name} → "
@@ -166,7 +184,25 @@ def main():
                     f"ROC_AUC={roc:.3f}"
                 )
 
-        print("\n✅ All models trained and logged successfully.")
+        # -------------------------
+        # ✅ LOCAL MODEL EXPORT (CRITICAL)
+        # -------------------------
+        model_path = os.path.join(ARTIFACT_DIR, "model.pkl")
+        joblib.dump(best_overall_model, model_path)
+
+        info_path = os.path.join(ARTIFACT_DIR, "model_info.txt")
+        with open(info_path, "w") as f:
+            f.write(f"Best Model: {best_overall_name}\n")
+            f.write(f"ROC_AUC: {best_overall_score:.4f}\n")
+
+        print("\n🏆 Best Model Saved Locally")
+        print(f"📦 Model: {model_path}")
+        print(f"📄 Info: {info_path}")
+
+        mlflow.log_artifact(model_path, artifact_path="deployment")
+        mlflow.log_artifact(info_path, artifact_path="deployment")
+
+        print("\n✅ All models trained, logged, and exported successfully.")
 
 
 if __name__ == "__main__":

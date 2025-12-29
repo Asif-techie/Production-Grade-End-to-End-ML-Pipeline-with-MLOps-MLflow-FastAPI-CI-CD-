@@ -57,15 +57,22 @@ def download_from_uci(save_path: str = LOCAL_DATA_PATH) -> pd.DataFrame:
     print(f"✅ Dataset downloaded and saved to {save_path}")
     return df
 
-
 def load_raw_df() -> pd.DataFrame:
     """
     Load raw dataset using priority:
-    1) ucimlrepo API
-    2) local CSV
+    1) Local CSV (guaranteed for CI)
+    2) ucimlrepo API
     3) UCI download
     """
-    # 1️⃣ ucimlrepo
+
+    # 1️⃣ Always try local first (CI-safe)
+    if os.path.exists(LOCAL_DATA_PATH):
+        print("📂 Loading dataset from local CSV")
+        df = pd.read_csv(LOCAL_DATA_PATH)
+        df.columns = COLS
+        return df
+
+    # 2️⃣ Try ucimlrepo
     try:
         print("🔌 Trying ucimlrepo API...")
         from ucimlrepo import fetch_ucirepo
@@ -83,16 +90,16 @@ def load_raw_df() -> pd.DataFrame:
     except Exception as e:
         print("⚠ ucimlrepo failed:", e)
 
-    # 2️⃣ local CSV
-    if os.path.exists(LOCAL_DATA_PATH):
-        print("📂 Loading dataset from local CSV")
-        df = pd.read_csv(LOCAL_DATA_PATH, header=None)
-        df.columns = COLS
-        return df
+    # 3️⃣ Final fallback: UCI download
+    try:
+        print("⬇ Downloading dataset from UCI")
+        return download_from_uci(LOCAL_DATA_PATH)
+    except Exception as e:
+        raise RuntimeError(
+            "❌ Data loading failed. "
+            "No local CSV and no internet access."
+        ) from e
 
-    # 3️⃣ download
-    print("⬇ Downloading dataset from UCI")
-    return download_from_uci(LOCAL_DATA_PATH)
 
 # =========================
 # Data cleaning
