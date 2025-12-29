@@ -164,8 +164,8 @@ def main():
                 safe_name = name.replace("/", "_").replace(" ", "_")
                 mlflow.sklearn.log_model(
                     sk_model=best_model,
-                    artifact_path="model",           # folder in run artifacts
-                    registered_model_name=safe_name  # valid model name for MLflow registry
+                    artifact_path="model",           # folder inside run artifacts
+                    registered_model_name=safe_name  # valid MLflow model registry name
                 )
 
                 # -------------------------
