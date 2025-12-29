@@ -55,7 +55,7 @@ def main():
     with mlflow.start_run(run_name="Main_Training_Run"):
 
         # -------------------------
-        # Load & prepare data
+        # Load & prepare data 
         # -------------------------
         X, y, _ = load_heart_data(run_eda=True)
 
@@ -165,9 +165,9 @@ def main():
                 # -------------------------
                 mlflow.sklearn.log_model(
                     sk_model=best_model,
-                    artifact_path="model",
-                    registered_model_name=name
-                )
+                    artifact_path="model",           # simple artifact folder
+                    registered_model_name=name       # valid MLflow model name
+                    )
 
                 # -------------------------
                 # Track BEST overall model
