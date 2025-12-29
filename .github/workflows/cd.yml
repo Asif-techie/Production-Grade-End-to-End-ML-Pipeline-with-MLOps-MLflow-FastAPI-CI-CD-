@@ -1,8 +1,7 @@
 name: CD - Train & Log Models
 
 on:
-  push:
-    branches: [ "main" ]
+  workflow_dispatch:   
 
 jobs:
   train:
