@@ -11,7 +11,6 @@ Main training script:
 
 import os
 import tempfile
-import mlflow
 import joblib
 import mlflow
 import mlflow.sklearn
@@ -55,7 +54,7 @@ def main():
     with mlflow.start_run(run_name="Main_Training_Run"):
 
         # -------------------------
-        # Load & prepare data 
+        # Load & prepare data
         # -------------------------
         X, y, _ = load_heart_data(run_eda=True)
 
@@ -150,24 +149,24 @@ def main():
                 # -------------------------
                 # Save plots
                 # -------------------------
-                tmpdir = tempfile.mkdtemp()
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    cm_path = os.path.join(tmpdir, f"{name}_cm.png")
+                    save_cm(y_test, y_pred, cm_path)
+                    mlflow.log_artifact(cm_path, artifact_path="artifacts")
 
-                cm_path = os.path.join(tmpdir, f"{name}_cm.png")
-                save_cm(y_test, y_pred, cm_path)
-                mlflow.log_artifact(cm_path, artifact_path="artifacts")
-
-                roc_path = os.path.join(tmpdir, f"{name}_roc.png")
-                save_roc(y_test, y_score, roc_path)
-                mlflow.log_artifact(roc_path, artifact_path="artifacts")
+                    roc_path = os.path.join(tmpdir, f"{name}_roc.png")
+                    save_roc(y_test, y_score, roc_path)
+                    mlflow.log_artifact(roc_path, artifact_path="artifacts")
 
                 # -------------------------
-                # MLflow model logging
+                # MLflow model logging (fixed)
                 # -------------------------
+                safe_name = name.replace("/", "_").replace(" ", "_")
                 mlflow.sklearn.log_model(
                     sk_model=best_model,
-                    artifact_path="model",           # simple artifact folder
-                    registered_model_name=name       # valid MLflow model name
-                    )
+                    artifact_path="model",           # folder in run artifacts
+                    registered_model_name=safe_name  # valid model name for MLflow registry
+                )
 
                 # -------------------------
                 # Track BEST overall model
