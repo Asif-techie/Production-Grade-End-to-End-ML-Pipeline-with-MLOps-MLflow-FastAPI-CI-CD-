@@ -1,0 +1,75 @@
+name: CI/CD - ML Pipeline + AKS
+
+on:
+  push:
+    branches: [ "dev", "main" ]
+  pull_request:
+    branches: [ "dev", "main" ]
+
+jobs:
+  build-test-docker-deploy:
+    runs-on: ubuntu-latest
+    env:
+      MLFLOW_TRACKING_URI: file:///tmp/mlruns
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+      KUBECONFIG: ${{ secrets.AKS_KUBECONFIG }}
+
+    steps:
+    # 1️⃣ Checkout code
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    # 2️⃣ Setup Python
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: 3.10
+
+    # 3️⃣ Install dependencies
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    # 4️⃣ Linting
+    - name: Lint code
+      run: flake8 src tests --count --exit-zero --max-line-length=120 --statistics
+
+    # 5️⃣ Unit tests
+    - name: Run unit tests
+      run: pytest -v
+
+    # 6️⃣ Train model
+    - name: Train model
+      run: python src/train.py
+
+    # 7️⃣ Login to Docker Hub
+    - name: Log in to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+
+    # 8️⃣ Build and push Docker image
+    - name: Build & push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        push: true
+        tags: ${{ secrets.DOCKER_USERNAME }}/heart-api:latest
+        file: ./Dockerfile
+
+    # 9️⃣ Install kubectl
+    - name: Install kubectl
+      run: |
+        curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+        chmod +x kubectl
+        sudo mv kubectl /usr/local/bin/
+
+    # 🔟 Deploy to AKS
+    - name: Deploy to AKS
+      run: |
+        echo "$KUBECONFIG" > kubeconfig
+        export KUBECONFIG=kubeconfig
+        kubectl set image deployment/heart-api heart-api=${{ secrets.DOCKER_USERNAME }}/heart-api:latest
+        kubectl rollout status deployment/heart-api
