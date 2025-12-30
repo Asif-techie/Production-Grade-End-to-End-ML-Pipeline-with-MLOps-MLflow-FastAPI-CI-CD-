@@ -8,7 +8,7 @@ Production-grade training script:
 - Saves trained models locally for Docker deployment
 """
 import matplotlib
-matplotlib.use("Agg") 
+matplotlib.use("Agg")
 
 import os
 import tempfile

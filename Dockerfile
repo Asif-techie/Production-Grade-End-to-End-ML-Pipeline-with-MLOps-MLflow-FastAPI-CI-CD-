@@ -1,21 +1,18 @@
-# Use official Python base image
+# Dockerfile
+
 FROM python:3.11-slim
 
-# Set workdir
 WORKDIR /app
 
-# Copy requirements
+# Copy source code
+COPY src/ ./src
 COPY requirements.txt .
 
 # Install dependencies
 RUN pip install --upgrade pip
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install -r requirements.txt
 
-# Copy source code
-COPY src/ ./src
-
-# Expose FastAPI port
 EXPOSE 80
 
-# Start FastAPI app
+# Start FastAPI
 CMD ["uvicorn", "src.app:app", "--host", "0.0.0.0", "--port", "80"]

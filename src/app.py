@@ -1,18 +1,34 @@
-import mlflow
-import mlflow.sklearn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from pydantic import BaseModel
-import pandas as pd
-import os
+import joblib
+import numpy as np
+import logging
+#from prometheus_fastapi_instrumentator import Instrumentator
 
-MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "file:///mlruns")
-mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+# Logging
+logging.basicConfig(level=logging.INFO)
 
-MODEL_URI = "models:/HeartDisease_Models/Production"
+# Load model
+MODEL_PATH = "models/LogisticRegression.pkl"
+model = joblib.load(MODEL_PATH)
 
-model = mlflow.sklearn.load_model(MODEL_URI)
+app = FastAPI()
 
-app = FastAPI(title="Heart Disease Prediction API")
+# Prometheus metrics
+instrumentator = Instrumentator()
+instrumentator.instrument(app).expose(app)
+
+# Middleware logging
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    logging.info(f"Request: {request.method} {request.url}")
+    response = await call_next(request)
+    logging.info(f"Response status: {response.status_code}")
+    return response
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
 
 class HeartInput(BaseModel):
     age: int
@@ -29,12 +45,13 @@ class HeartInput(BaseModel):
     ca: int
     thal: int
 
-@app.get("/health")
-def health():
-    return {"status": "ok"}
-
 @app.post("/predict")
 def predict(data: HeartInput):
-    df = pd.DataFrame([data.dict()])
-    pred = model.predict(df)[0]
-    return {"prediction": int(pred)}
+    X = np.array([[
+        data.age, data.sex, data.cp, data.trestbps, data.chol,
+        data.fbs, data.restecg, data.thalach, data.exang, data.oldpeak,
+        data.slope, data.ca, data.thal
+    ]])
+    pred = model.predict(X)
+    proba = model.predict_proba(X)[:, 1]
+    return {"prediction": int(pred[0]), "probability": float(proba[0])}
