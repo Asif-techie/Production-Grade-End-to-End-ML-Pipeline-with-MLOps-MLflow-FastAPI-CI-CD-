@@ -20,9 +20,18 @@ spec:
           ports:
             - containerPort: 80
           env:
+            - name: MODEL_PATH
+              value: "models/LogisticRegression.pkl"
             - name: MLFLOW_TRACKING_URI
               value: "file:///mlruns"
           resources:
             limits:
               cpu: "500m"
               memory: "512Mi"
+          # Optional: Add liveness/readiness probe after verifying container works
+          # livenessProbe:
+          #   httpGet:
+          #     path: /health
+          #     port: 80
+          #   initialDelaySeconds: 15
+          #   periodSeconds: 10
