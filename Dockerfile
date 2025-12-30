@@ -7,6 +7,7 @@ WORKDIR /app
 
 # Copy source code
 COPY src/ ./src 
+COPY models/ ./models
 COPY requirements.txt .
 
 # Install dependencies
