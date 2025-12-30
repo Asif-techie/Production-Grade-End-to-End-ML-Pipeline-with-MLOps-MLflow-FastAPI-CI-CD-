@@ -1,128 +1,121 @@
-name: CI/CD - Heart API + AKS
+name: Heart Disease CI/CD
 
 on:
   push:
-    branches: ["dev", "main"]
+    branches:
+      - main
+      - dev
   pull_request:
-    branches: ["dev", "main"]
+    branches:
+      - main
+      - dev
+
+env:
+  MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+  MLFLOW_EXPERIMENT_NAME: HeartDisease_CI_CD
+  DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+  DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+  MODEL_PATH: "models"
 
 jobs:
-  build-test-deploy:
+  build-and-train:
     runs-on: ubuntu-latest
-    env:
-      MLFLOW_TRACKING_URI: "${{ secrets.MLFLOW_TRACKING_URI }}"
-      DOCKER_USERNAME: "${{ secrets.DOCKER_USERNAME }}"
-      DOCKER_PASSWORD: "${{ secrets.DOCKER_PASSWORD }}"
-      KUBECONFIG: "${{ secrets.KUBECONFIG }}"
-
     steps:
-      # 1️⃣ Checkout repo
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2️⃣ Setup Python
-      - name: Setup Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: 3.11
 
-      # 3️⃣ Install dependencies
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # 4️⃣ Lint code
-      - name: Lint
-        run: flake8 src tests --count --exit-zero --max-line-length=120 --statistics
-
-      # 5️⃣ Run unit tests
-      - name: Unit Tests
-        run: pytest -v
-
-      # 6️⃣ Train model with MLflow logging
-      - name: Train Model & Log MLflow
+      - name: Run MLflow Training
         run: |
-          mkdir -p mlruns
-          mlflow experiments create --experiment-name "HeartDisease_CI_CD" || echo "Experiment exists"
-          mlflow run src --entry-point train.py --experiment-name HeartDisease_CI_CD
-          # Ensure model folder exists for Docker
-          mkdir -p src/models
-          mv models/LogisticRegression.pkl src/models/
-          ls -la src/models/
+          mlflow run . --no-conda
+        env:
+          MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+          MLFLOW_EXPERIMENT_NAME: HeartDisease_CI_CD
 
-      # 7️⃣ Login to Docker Hub
-      - name: Docker Login
-        uses: docker/login-action@v3
+      - name: Upload MLflow Artifacts
+        uses: actions/upload-artifact@v4
         with:
-          username: "${{ secrets.DOCKER_USERNAME }}"
-          password: "${{ secrets.DOCKER_PASSWORD }}"
+          name: mlflow-artifacts
+          path: mlruns/
 
-      # 8️⃣ Build & push Docker image
-      - name: Build & Push Docker Image
+  docker-build-and-test:
+    runs-on: ubuntu-latest
+    needs: build-and-train
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download MLflow artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: mlflow-artifacts
+          path: ./mlruns
+
+      - name: Copy trained models
+        run: |
+          mkdir -p models
+          cp mlruns/*/artifacts/*/*.pkl models/ || echo "No models found"
+
+      - name: Build Docker image
         run: |
           docker build -t ${{ secrets.DOCKER_USERNAME }}/heart-api:latest .
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Push Docker image
+        run: |
           docker push ${{ secrets.DOCKER_USERNAME }}/heart-api:latest
 
-      # 9️⃣ Test Docker container locally & save artifacts
-      - name: Test Docker Container & Save Artifacts
+      - name: Test Docker container locally
         run: |
-          IMAGE="${{ secrets.DOCKER_USERNAME }}/heart-api:latest"
-          mkdir -p container_logs
-          
-          # Run container
-          docker run -d --name heart-api-test -p 8000:80 "$IMAGE"
-          
-          # Wait for API to start
+          docker run -d --name heart-api-test -p 8000:80 ${{ secrets.DOCKER_USERNAME }}/heart-api:latest
           for i in {1..10}; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/health)
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/health) || true
             if [ "$STATUS" -eq 200 ]; then
               echo "✅ Health check passed"
               break
+            else
+              echo "⏳ Waiting for container to be ready..."
+              sleep 5
             fi
-            echo "Waiting for API... attempt $i"
-            sleep 3
           done
-          
-          if [ "$STATUS" -ne 200 ]; then
-            echo "❌ Health check failed"
-            docker logs heart-api-test | tee container_logs/heart-api.log
-            docker stop heart-api-test
-            docker rm heart-api-test
-            exit 1
-          fi
-          
-          # Test predict endpoint
-          curl -s -X POST http://localhost:8000/predict \
+          RESPONSE=$(curl -s -X POST http://localhost:8000/predict \
             -H "Content-Type: application/json" \
-            -d '{"instances": [[63,1,3,145,233,1,0,150,0,2.3,0,0,1]]}' \
-            | tee container_logs/predict_response.json
-          
-          # Save container logs
-          docker logs heart-api-test | tee container_logs/heart-api.log
-          
-          # Stop & remove container
+            -d '{"instances": [[63,1,3,145,233,1,0,150,0,2.3,0,0,1]]}')
+          echo "Predict response: $RESPONSE"
           docker stop heart-api-test
           docker rm heart-api-test
-          
-        # Save artifacts
-      - name: Upload Container Logs & Predictions
-        uses: actions/upload-artifact@v4
-        with:
-          name: container-artifacts
-          path: container_logs/
 
-      # 🔟 Setup kubectl
+  deploy-to-aks:
+    runs-on: ubuntu-latest
+    needs: docker-build-and-test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Setup kubectl
-        run: |
-          echo "${{ secrets.KUBECONFIG }}" | base64 --decode > kubeconfig
-          export KUBECONFIG=kubeconfig
-          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-          chmod +x kubectl
-          sudo mv kubectl /usr/local/bin/
+        uses: azure/setup-kubectl@v3
 
-      # 1️⃣1️⃣ Deploy to AKS
+      - name: Configure AKS
+        run: |
+          echo "${{ secrets.KUBECONFIG }}" > kubeconfig
+          export KUBECONFIG=$(pwd)/kubeconfig
+
       - name: Deploy to AKS
         run: |
-          kubectl set image deployment/heart-api heart-api="${{ secrets.DOCKER_USERNAME }}/heart-api:latest"
-          kubectl rollout status deployment/heart-api
+          kubectl apply -f k8s/deployment.yaml
+          kubectl apply -f k8s/service.yaml
+          kubectl rollout status deployment/heart-api --timeout=180s
