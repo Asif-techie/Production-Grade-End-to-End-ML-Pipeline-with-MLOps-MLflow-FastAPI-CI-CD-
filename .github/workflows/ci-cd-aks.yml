@@ -2,54 +2,50 @@ name: Heart Disease CI/CD
 
 on:
   push:
-    branches:
-      - main
-      - dev
+    branches: [ main, dev ]
   pull_request:
-    branches:
-      - main
-      - dev
+    branches: [ main, dev ]
 
 env:
-  MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
   MLFLOW_EXPERIMENT_NAME: HeartDisease_CI_CD
   DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
   DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
-  MODEL_PATH: "models"
 
 jobs:
-  build-and-train:
+  train:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: 3.11
+          python-version: "3.11"
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install mlflow
 
-      - name: Run MLflow Training
-        run: |
-          mlflow run . --no-conda
+      - name: Run MLflow Training (NO conda / NO venv)
         env:
           MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
-          MLFLOW_EXPERIMENT_NAME: HeartDisease_CI_CD
+        run: |
+          mlflow run . --env-manager=local
 
-      - name: Upload MLflow Artifacts
+      - name: Upload MLflow artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: mlflow-artifacts
+          name: mlruns
           path: mlruns/
 
-  docker-build-and-test:
+  docker:
     runs-on: ubuntu-latest
-    needs: build-and-train
+    needs: train
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -57,17 +53,13 @@ jobs:
       - name: Download MLflow artifacts
         uses: actions/download-artifact@v4
         with:
-          name: mlflow-artifacts
-          path: ./mlruns
+          name: mlruns
+          path: mlruns
 
-      - name: Copy trained models
+      - name: Extract model artifacts
         run: |
           mkdir -p models
-          cp mlruns/*/artifacts/*/*.pkl models/ || echo "No models found"
-
-      - name: Build Docker image
-        run: |
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/heart-api:latest .
+          find mlruns -name "*.pkl" -exec cp {} models/ \;
 
       - name: Login to DockerHub
         uses: docker/login-action@v2
@@ -75,33 +67,27 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
+      - name: Build Docker image
+        run: |
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/heart-api:latest .
+
+      - name: Test container locally
+        run: |
+          docker run -d -p 8000:80 --name heart-test ${{ secrets.DOCKER_USERNAME }}/heart-api:latest
+          sleep 10
+          curl http://localhost:8000/health
+          docker logs heart-test
+          docker stop heart-test
+          docker rm heart-test
+
       - name: Push Docker image
         run: |
           docker push ${{ secrets.DOCKER_USERNAME }}/heart-api:latest
 
-      - name: Test Docker container locally
-        run: |
-          docker run -d --name heart-api-test -p 8000:80 ${{ secrets.DOCKER_USERNAME }}/heart-api:latest
-          for i in {1..10}; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/health) || true
-            if [ "$STATUS" -eq 200 ]; then
-              echo "✅ Health check passed"
-              break
-            else
-              echo "⏳ Waiting for container to be ready..."
-              sleep 5
-            fi
-          done
-          RESPONSE=$(curl -s -X POST http://localhost:8000/predict \
-            -H "Content-Type: application/json" \
-            -d '{"instances": [[63,1,3,145,233,1,0,150,0,2.3,0,0,1]]}')
-          echo "Predict response: $RESPONSE"
-          docker stop heart-api-test
-          docker rm heart-api-test
-
-  deploy-to-aks:
+  deploy:
     runs-on: ubuntu-latest
-    needs: docker-build-and-test
+    needs: docker
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -109,13 +95,12 @@ jobs:
       - name: Setup kubectl
         uses: azure/setup-kubectl@v3
 
-      - name: Configure AKS
+      - name: Configure Kubeconfig
         run: |
           echo "${{ secrets.KUBECONFIG }}" > kubeconfig
-          export KUBECONFIG=$(pwd)/kubeconfig
+          export KUBECONFIG=$PWD/kubeconfig
 
       - name: Deploy to AKS
         run: |
-          kubectl apply -f k8s/deployment.yaml
-          kubectl apply -f k8s/service.yaml
+          kubectl apply -f k8s/
           kubectl rollout status deployment/heart-api --timeout=180s
