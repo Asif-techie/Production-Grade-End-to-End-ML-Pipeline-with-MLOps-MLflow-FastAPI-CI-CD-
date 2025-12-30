@@ -1,4 +1,4 @@
-name: CI/CD - ML Pipeline + AKS
+name: CI/CD - Heart API + AKS
 
 on:
   push:
@@ -58,7 +58,7 @@ jobs:
         with:
           push: true
           tags: ${{ secrets.DOCKER_USERNAME }}/heart-api:latest
-          file: ./Dockerfile   # <- adjust if Dockerfile is not in root
+          file: ./Dockerfile
 
       # 9️⃣ Install kubectl
       - name: Install kubectl

@@ -3,10 +3,10 @@ kind: Service
 metadata:
   name: heart-api-service
 spec:
+  type: LoadBalancer
   selector:
     app: heart-api
-  type: LoadBalancer
   ports:
     - protocol: TCP
       port: 80
-      targetPort: 8000
+      targetPort: 80

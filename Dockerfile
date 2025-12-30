@@ -1,19 +1,22 @@
-FROM python:3.10-slim
+# Use official Python base image
+FROM python:3.11-slim
 
+# Set workdir
 WORKDIR /app
 
-# Install dependencies
+# Copy requirements
 COPY requirements.txt .
+
+# Install dependencies
+RUN pip install --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy source code
-COPY src/ src/
+COPY src/ ./src
+COPY models/ ./models
 
-# 🔥 Train model during image build
-RUN python src/train.py
+# Expose FastAPI port
+EXPOSE 80
 
-# Expose API port
-EXPOSE 8000
-
-# Start FastAPI
-CMD ["uvicorn", "src.app:app", "--host", "0.0.0.0", "--port", "8000"]
+# Start FastAPI app
+CMD ["uvicorn", "src.app:app", "--host", "0.0.0.0", "--port", "80"]

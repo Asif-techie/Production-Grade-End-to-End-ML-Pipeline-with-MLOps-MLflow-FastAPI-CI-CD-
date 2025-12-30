@@ -6,15 +6,19 @@ Main training script:
  - calls data.load_heart_data(run_eda=True) (EDA will run as a nested MLflow child run)
  - for each pipeline, performs hyperparameter search and logs model, metrics, and artifacts in nested runs
  - dynamically adjusts n_iter for RandomizedSearchCV to avoid UserWarnings
+ - saves models locally for Docker deployment
 """
 
 import os
 import tempfile
-import mlflow
-import mlflow.sklearn
+import joblib
 from math import prod
 from sklearn.model_selection import train_test_split, GridSearchCV, RandomizedSearchCV
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
+
+import matplotlib
+matplotlib.use("Agg")  # Headless plotting (no GUI)
+import mlflow
 
 from pipeline import pipelines, param_spaces, search_type
 from data import load_heart_data
@@ -47,6 +51,9 @@ def main():
 
         mlflow.log_param("train_rows", X_train.shape[0])
         mlflow.log_param("test_rows", X_test.shape[0])
+
+        # Ensure local models folder exists
+        os.makedirs("models", exist_ok=True)
 
         # Iterate over pipelines
         for name, pipe in pipelines.items():
@@ -121,8 +128,12 @@ def main():
                 save_roc(y_test, y_score, roc_path)
                 mlflow.log_artifact(roc_path, artifact_path="artifacts")
 
-                # Log the model (MLflow 2.x)
-                mlflow.sklearn.log_model(best_model, name=name)
+                # Save model locally for Docker
+                model_path = os.path.join("models", f"{name}.pkl")
+                joblib.dump(best_model, model_path)
+
+                # Log model as MLflow artifact
+                mlflow.log_artifact(model_path, artifact_path=f"models/{name}")
 
                 print(f"{name} → Accuracy={acc:.3f}, F1={f1:.3f}, ROC_AUC={roc:.3f}")
 
