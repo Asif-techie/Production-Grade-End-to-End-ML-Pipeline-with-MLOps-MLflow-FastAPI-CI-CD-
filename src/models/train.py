@@ -6,7 +6,7 @@ Main training script:
  - calls data.load_heart_data(run_eda=True) (EDA runs as nested MLflow run)
  - performs hyperparameter search per pipeline
  - logs metrics, plots, and models to MLflow
- - exports BEST model locally for deployment (CRITICAL)
+ - exports BEST model locally for deployment
 """
 
 import os
@@ -24,7 +24,6 @@ from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 from pipeline import pipelines, param_spaces, search_type
 from data import load_heart_data
 from utils_plot import save_cm, save_roc
-
 
 # -------------------------
 # Experiment configuration
@@ -159,12 +158,12 @@ def main():
                     mlflow.log_artifact(roc_path, artifact_path="artifacts")
 
                 # -------------------------
-                # MLflow model logging (fixed)
+                # MLflow model logging (safe)
                 # -------------------------
                 safe_name = name.replace("/", "_").replace(" ", "_")
                 mlflow.sklearn.log_model(
                     sk_model=best_model,
-                    artifact_path="model",           # folder inside run artifacts
+                    artifact_path="model",           # folder in run artifacts
                     registered_model_name=safe_name  # valid MLflow model registry name
                 )
 
@@ -184,7 +183,7 @@ def main():
                 )
 
         # -------------------------
-        # ✅ LOCAL MODEL EXPORT (CRITICAL)
+        # ✅ LOCAL MODEL EXPORT
         # -------------------------
         model_path = os.path.join(ARTIFACT_DIR, "model.pkl")
         joblib.dump(best_overall_model, model_path)
