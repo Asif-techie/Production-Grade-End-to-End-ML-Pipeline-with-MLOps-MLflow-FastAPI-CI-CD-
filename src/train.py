@@ -53,11 +53,6 @@ def main():
         for name, pipe in pipelines.items():
             print(f"\n🔹 Starting hyperparameter search for {name}")
 
-            # Skip CatBoost if present
-            if "catboost" in name.lower():
-                print(f"⚠ Skipping CatBoost pipeline: {name}")
-                continue
-
             Searcher = search_type.get(name)
             params = param_spaces.get(name, {})
 
@@ -127,8 +122,8 @@ def main():
                 save_roc(y_test, y_score, roc_path)
                 mlflow.log_artifact(roc_path, artifact_path="artifacts")
 
-                # Log the model
-                mlflow.sklearn.log_model(best_model, artifact_path=f"models/{name}")
+                # Log the model (MLflow-safe artifact path)
+                mlflow.sklearn.log_model(best_model, artifact_path="models", name=name)
 
                 print(f"{name} → Accuracy={acc:.3f}, F1={f1:.3f}, ROC_AUC={roc:.3f}")
 
