@@ -107,7 +107,7 @@ jobs:
           
         # Save artifacts
       - name: Upload Container Logs & Predictions
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: container-artifacts
           path: container_logs/
