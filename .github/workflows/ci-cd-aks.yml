@@ -32,9 +32,9 @@ jobs:
 
       - name: Run MLflow Training (NO conda / NO venv)
         env:
-          MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+          MLFLOW_TRACKING_URI: file:///tmp/mlruns
         run: |
-          mlflow run . --env-manager=local
+          python src/train.py
 
       - name: Upload MLflow artifacts
         uses: actions/upload-artifact@v4

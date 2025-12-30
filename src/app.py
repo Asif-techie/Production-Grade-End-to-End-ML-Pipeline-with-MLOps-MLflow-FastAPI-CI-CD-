@@ -3,7 +3,7 @@ from pydantic import BaseModel
 import joblib
 import numpy as np
 import logging
-#from prometheus_fastapi_instrumentator import Instrumentator
+from prometheus_fastapi_instrumentator import Instrumentator
 
 # Logging
 logging.basicConfig(level=logging.INFO)
