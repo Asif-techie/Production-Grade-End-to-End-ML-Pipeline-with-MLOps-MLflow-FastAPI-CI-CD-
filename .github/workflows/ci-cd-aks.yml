@@ -40,9 +40,16 @@ jobs:
       - name: Unit Tests
         run: pytest -v
 
-      # 6️⃣ Train model
-      - name: Train Model
-        run: python src/train.py
+      # 6️⃣ Train model with MLflow logging
+      - name: Train Model & Log MLflow
+        run: |
+          mkdir -p mlruns
+          mlflow experiments create --experiment-name "HeartDisease_CI_CD" || echo "Experiment exists"
+          mlflow run src --entry-point train.py --experiment-name HeartDisease_CI_CD
+          # Ensure model folder exists for Docker
+          mkdir -p src/models
+          mv models/LogisticRegression.pkl src/models/
+          ls -la src/models/
 
       # 7️⃣ Login to Docker Hub
       - name: Docker Login
@@ -53,49 +60,57 @@ jobs:
 
       # 8️⃣ Build & push Docker image
       - name: Build & Push Docker Image
-        uses: docker/build-push-action@v5
-        with:
-          push: true
-          tags: "${{ secrets.DOCKER_USERNAME }}/heart-api:latest"
-          file: ./Dockerfile
+        run: |
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/heart-api:latest .
+          docker push ${{ secrets.DOCKER_USERNAME }}/heart-api:latest
 
-      # 9️⃣ Test Docker container locally (before AKS)
-      - name: Test Docker Container
+      # 9️⃣ Test Docker container locally & save artifacts
+      - name: Test Docker Container & Save Artifacts
         run: |
           IMAGE="${{ secrets.DOCKER_USERNAME }}/heart-api:latest"
-
-          # Run container in background
+          mkdir -p container_logs
+          
+          # Run container
           docker run -d --name heart-api-test -p 8000:80 "$IMAGE"
-
-          # Wait for API to become healthy (retry up to 10 times)
+          
+          # Wait for API to start
           for i in {1..10}; do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/health)
             if [ "$STATUS" -eq 200 ]; then
               echo "✅ Health check passed"
               break
             fi
-            echo "Waiting for API to start... attempt $i"
+            echo "Waiting for API... attempt $i"
             sleep 3
           done
-
-          # If still not healthy, print logs and fail
+          
           if [ "$STATUS" -ne 200 ]; then
             echo "❌ Health check failed"
-            docker logs heart-api-test
+            docker logs heart-api-test | tee container_logs/heart-api.log
             docker stop heart-api-test
             docker rm heart-api-test
             exit 1
           fi
-
-          # Test predict endpoint with dummy input
-          RESPONSE=$(curl -s -X POST http://localhost:8000/predict \
+          
+          # Test predict endpoint
+          curl -s -X POST http://localhost:8000/predict \
             -H "Content-Type: application/json" \
-            -d '{"instances": [[63,1,3,145,233,1,0,150,0,2.3,0,0,1]]}')
-          echo "Predict response: $RESPONSE"
-
-          # Stop and remove container
+            -d '{"instances": [[63,1,3,145,233,1,0,150,0,2.3,0,0,1]]}' \
+            | tee container_logs/predict_response.json
+          
+          # Save container logs
+          docker logs heart-api-test | tee container_logs/heart-api.log
+          
+          # Stop & remove container
           docker stop heart-api-test
           docker rm heart-api-test
+          
+        # Save artifacts
+      - name: Upload Container Logs & Predictions
+        uses: actions/upload-artifact@v3
+        with:
+          name: container-artifacts
+          path: container_logs/
 
       # 🔟 Setup kubectl
       - name: Setup kubectl
