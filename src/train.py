@@ -13,7 +13,6 @@ import tempfile
 import mlflow
 import mlflow.sklearn
 from math import prod
-import numpy as np
 from sklearn.model_selection import train_test_split, GridSearchCV, RandomizedSearchCV
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
 
@@ -71,7 +70,7 @@ def main():
                 )
             else:
                 max_combos = total_param_combinations(params)
-                n_iter = min(25, max_combos)  # dynamically adjust n_iter
+                n_iter = min(25, max_combos)
                 search = Searcher(
                     pipe,
                     params,
@@ -122,8 +121,8 @@ def main():
                 save_roc(y_test, y_score, roc_path)
                 mlflow.log_artifact(roc_path, artifact_path="artifacts")
 
-                # Log the model (MLflow-safe artifact path)
-                mlflow.sklearn.log_model(best_model, artifact_path="models", name=name)
+                # Log the model (MLflow 2.x)
+                mlflow.sklearn.log_model(best_model, name=name)
 
                 print(f"{name} → Accuracy={acc:.3f}, F1={f1:.3f}, ROC_AUC={roc:.3f}")
 
