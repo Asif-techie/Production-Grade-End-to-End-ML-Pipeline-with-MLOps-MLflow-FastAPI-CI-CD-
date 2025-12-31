@@ -114,7 +114,7 @@ jobs:
       # ✅ FIXED kubeconfig handling
       - name: Configure kubeconfig
         run: |
-          echo "${{ secrets.AKS_KUBECONFIG }}" | base64 -d > kubeconfig
+          echo "${{ secrets.AKS_KUBECONFIG }}" > kubeconfig
           export KUBECONFIG=$PWD/kubeconfig
           kubectl config get-contexts
 
