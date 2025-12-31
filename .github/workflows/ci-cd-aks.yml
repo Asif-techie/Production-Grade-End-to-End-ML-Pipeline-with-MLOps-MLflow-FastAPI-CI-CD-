@@ -7,13 +7,14 @@ on:
     branches: [ "dev", "main" ]
 
 jobs:
-  build-train-deploy:
+  train-build-deploy:
     runs-on: ubuntu-latest
 
     env:
       IMAGE_NAME: asiftech67/heart-api
+      MODEL_NAME: RandomForest.pkl          # <-- Update model here if needed
       MODEL_DIR: models
-      MODEL_NAME: LogisticRegression.pkl
+      MODEL_PATH: models/RandomForest.pkl
       K8S_MANIFEST: k8s/deployment.yaml
 
     steps:
@@ -33,11 +34,11 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    # 4️⃣ Train model
-    - name: Train model
+    # 4️⃣ Run training script
+    - name: Train Models
       run: |
         python src/train.py
-        ls -l $MODEL_DIR/$MODEL_NAME
+        ls -l $MODEL_DIR
 
     # 5️⃣ Log in to Docker Hub
     - name: Log in to Docker Hub
