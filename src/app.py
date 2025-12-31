@@ -5,10 +5,11 @@ import numpy as np
 
 app = FastAPI(title="Heart Disease Prediction API")
 
-# Path to model inside container
-MODEL_PATH = os.getenv("MODEL_PATH", "/app/models/LogisticRegression.pkl")
+# ✅ Canonical model path used across CI, Docker, AKS
+MODEL_PATH = os.getenv("MODEL_PATH", "/app/models/model.pkl")
 
-# Load model at startup
+model = None
+
 @app.on_event("startup")
 def load_model():
     global model
@@ -26,10 +27,14 @@ def predict(payload: dict):
     instances = payload.get("instances")
     if not instances:
         raise HTTPException(status_code=400, detail="No 'instances' provided")
+
     try:
         X = np.array(instances)
         preds = model.predict(X).tolist()
         probs = model.predict_proba(X).tolist()
-        return {"prediction": preds, "probability": probs}
+        return {
+            "prediction": preds,
+            "probability": probs
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
