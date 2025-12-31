@@ -7,13 +7,13 @@ on:
     branches: [ "dev", "main" ]
 
 jobs:
-  train-build-deploy:
+  build-train-deploy:
     runs-on: ubuntu-latest
 
     env:
       IMAGE_NAME: asiftech67/heart-api
-      MODEL_NAME: LogisticRegression.pkl
       MODEL_DIR: models
+      MODEL_NAME: LogisticRegression.pkl
       K8S_MANIFEST: k8s/deployment.yaml
 
     steps:
@@ -36,7 +36,6 @@ jobs:
     # 4️⃣ Train model
     - name: Train model
       run: |
-        mkdir -p $MODEL_DIR
         python src/train.py
         ls -l $MODEL_DIR/$MODEL_NAME
 
@@ -47,10 +46,13 @@ jobs:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASSWORD }}
 
-    # 6️⃣ Build Docker image (model already exists)
+    # 6️⃣ Build Docker image
     - name: Build Docker image
       run: |
-        docker build --build-arg MODEL_NAME=$MODEL_NAME --build-arg MODEL_DIR=$MODEL_DIR -t $IMAGE_NAME:latest .
+        docker build \
+          --build-arg MODEL_DIR=$MODEL_DIR \
+          --build-arg MODEL_NAME=$MODEL_NAME \
+          -t $IMAGE_NAME:latest .
 
     # 7️⃣ Push Docker image
     - name: Push Docker image
@@ -65,10 +67,11 @@ jobs:
 
     # 9️⃣ Configure AKS credentials
     - name: Set AKS credentials
-      run: |
-        echo "${{ secrets.AKS_KUBECONFIG }}" > kubeconfig
-        export KUBECONFIG=$PWD/kubeconfig
-        kubectl config view
+      uses: azure/aks-set-context@v3
+      with:
+        creds: ${{ secrets.AKS_KUBECONFIG }}
+        cluster-name: ${{ secrets.AKS_CLUSTER_NAME }}
+        resource-group: ${{ secrets.AKS_RESOURCE_GROUP }}
 
     # 🔟 Deploy to AKS
     - name: Deploy to AKS

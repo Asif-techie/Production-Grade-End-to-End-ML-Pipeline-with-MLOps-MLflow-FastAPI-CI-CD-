@@ -2,6 +2,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: heart-api
+  labels:
+    app: heart-api
 spec:
   replicas: 2
   selector:
@@ -14,31 +16,30 @@ spec:
     spec:
       containers:
         - name: heart-api
-          image: asiftech67/heart-api:latest
+          image: asiftech67/heart-api:latest   # CI/CD pipeline pushes this image
           imagePullPolicy: Always
           ports:
             - containerPort: 80
           env:
             - name: MODEL_PATH
-              value: "/app/models/LogisticRegression.pkl"
-            - name: MLFLOW_TRACKING_URI
-              value: "file:///mlruns"
+              value: "models/LogisticRegression.pkl"  # Matches Dockerfile ENV
           resources:
             requests:
-              cpu: "500m"
-              memory: "512Mi"
+              cpu: 500m
+              memory: 512Mi
             limits:
-              cpu: "500m"
-              memory: "512Mi"
+              cpu: 500m
+              memory: 512Mi
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: heart-api-service
 spec:
-  type: LoadBalancer
   selector:
     app: heart-api
+  type: LoadBalancer
   ports:
-    - port: 80
+    - protocol: TCP
+      port: 80
       targetPort: 80
