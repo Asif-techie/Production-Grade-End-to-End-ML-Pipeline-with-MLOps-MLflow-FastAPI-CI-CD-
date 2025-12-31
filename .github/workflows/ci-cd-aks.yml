@@ -7,16 +7,18 @@ on:
     branches: [ "dev", "main" ]
 
 jobs:
-  build-and-deploy:
+  train-build-deploy:
     runs-on: ubuntu-latest
 
     env:
       IMAGE_NAME: asiftech67/heart-api
+      MODEL_DIR: models
       MODEL_PATH: models/LogisticRegression.pkl
       K8S_MANIFEST: k8s/deployment.yaml
+      PYTHON_VERSION: 3.11
 
     steps:
-    # 1️⃣ Checkout repository
+    # 1️⃣ Checkout repo
     - name: Checkout code
       uses: actions/checkout@v3
 
@@ -24,41 +26,47 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.11'
+        python-version: ${{ env.PYTHON_VERSION }}
 
-    # 3️⃣ Install dependencies for training (optional if CI trains model)
+    # 3️⃣ Install dependencies
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    # 4️⃣ Log in to Docker Hub
+    # 4️⃣ Train model (creates models/LogisticRegression.pkl)
+    - name: Train ML model
+      run: |
+        mkdir -p $MODEL_DIR
+        python src/train.py
+
+    # 5️⃣ Log in to Docker Hub
     - name: Log in to Docker Hub
       uses: docker/login-action@v2
       with:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASSWORD }}
 
-    # 5️⃣ Build Docker image
+    # 6️⃣ Build Docker image including trained model
     - name: Build Docker image
       run: |
         docker build -t $IMAGE_NAME:latest .
 
-    # 6️⃣ Push Docker image
+    # 7️⃣ Push Docker image
     - name: Push Docker image
       run: |
         docker push $IMAGE_NAME:latest
 
-    # 7️⃣ Set up kubectl
+    # 8️⃣ Set up kubectl
     - name: Set up kubectl
       uses: azure/setup-kubectl@v3
       with:
         version: 'v1.30.0'
 
-    # 8️⃣ Configure AKS credentials
+    # 9️⃣ Configure AKS credentials
   
 
-    # 9️⃣ Deploy to AKS
+    # 🔟 Deploy to AKS
     - name: Deploy to AKS
       run: |
         kubectl apply -f $K8S_MANIFEST --validate=false
