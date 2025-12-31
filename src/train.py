@@ -5,8 +5,9 @@ Production-grade training script:
 - Runs EDA as nested MLflow run
 - Trains multiple models with hyperparameter search
 - Logs metrics & artifacts to MLflow
-- Saves trained models locally for Docker deployment
+- Saves the BEST trained model locally for Docker deployment
 """
+
 import matplotlib
 matplotlib.use("Agg")
 
@@ -33,6 +34,7 @@ CV_FOLDS = 5
 RANDOM_STATE = 42
 
 MODEL_DIR = "models"
+FINAL_MODEL_PATH = os.path.join(MODEL_DIR, "model.pkl")
 os.makedirs(MODEL_DIR, exist_ok=True)
 # ---------------------------------------- #
 
@@ -44,6 +46,10 @@ def total_param_combinations(param_grid):
 
 
 def main():
+    best_overall_model = None
+    best_overall_score = -1.0
+    best_model_name = None
+
     with mlflow.start_run(run_name="Main_Training_Run"):
 
         # Load data + run EDA (nested run)
@@ -123,7 +129,7 @@ def main():
                 mlflow.log_metric("f1_score", f1)
                 mlflow.log_metric("roc_auc", roc)
 
-                # -------- Save plots as artifacts -------- #
+                # -------- Save plots -------- #
                 tmpdir = tempfile.mkdtemp()
 
                 cm_path = os.path.join(tmpdir, f"{name}_cm.png")
@@ -134,12 +140,7 @@ def main():
                 save_roc(y_test, y_score, roc_path)
                 mlflow.log_artifact(roc_path, artifact_path="artifacts")
 
-                # -------- Save model locally (Docker needs this) -------- #
-                model_path = os.path.join(MODEL_DIR, f"{name}.pkl")
-                joblib.dump(best_model, model_path)
-                print(f"✅ Saved model locally → {model_path}")
-
-                # -------- Log model to MLflow (NO `name=`) -------- #
+                # -------- Log model to MLflow -------- #
                 mlflow.sklearn.log_model(best_model, artifact_path=name)
 
                 print(
@@ -147,7 +148,26 @@ def main():
                     f"F1={f1:.3f}, ROC_AUC={roc:.3f}"
                 )
 
-        print("\n🎉 Training complete. Models saved + logged to MLflow.")
+                # -------- Track BEST model -------- #
+                if roc > best_overall_score:
+                    best_overall_score = roc
+                    best_overall_model = best_model
+                    best_model_name = name
+
+        # ---------------- SAVE FINAL MODEL ---------------- #
+        if best_overall_model is None:
+            raise RuntimeError("❌ No model was trained successfully")
+
+        joblib.dump(best_overall_model, FINAL_MODEL_PATH)
+        mlflow.log_param("best_model", best_model_name)
+        mlflow.log_metric("best_model_roc_auc", best_overall_score)
+
+        print("\n🏆 BEST MODEL SELECTED")
+        print(f"Model: {best_model_name}")
+        print(f"ROC_AUC: {best_overall_score:.4f}")
+        print(f"📦 Saved to → {FINAL_MODEL_PATH}")
+
+        print("\n🎉 Training complete. Best model saved for Docker deployment.")
 
 
 if __name__ == "__main__":
