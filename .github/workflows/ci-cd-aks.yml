@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Python
@@ -34,18 +34,18 @@ jobs:
           pip install -r requirements.txt
           pip install mlflow joblib
 
-      - name: Run training
+      - name: Train model
         run: |
           python src/train.py
 
-      - name: Verify outputs
+      - name: Verify artifacts
         run: |
-          echo "MLruns:"
+          echo "MLflow runs:"
           ls -R mlruns || true
           echo "Models:"
           ls -R models || true
 
-      - name: Upload MLflow runs
+      - name: Upload MLflow artifacts
         uses: actions/upload-artifact@v4
         with:
           name: mlruns
@@ -58,20 +58,21 @@ jobs:
           path: models/
 
 # =====================================================
-# 2️⃣ DOCKER BUILD + LOCAL TEST
+# 2️⃣ BUILD + TEST + PUSH DOCKER IMAGE
 # =====================================================
   docker:
     runs-on: ubuntu-latest
     needs: train
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Download model
+      - name: Download model artifact
         uses: actions/download-artifact@v4
         with:
           name: model
-          path: models
+          path: models/
 
       - name: Docker login
         uses: docker/login-action@v3
@@ -97,35 +98,43 @@ jobs:
           docker push $DOCKER_USERNAME/heart-api:latest
 
 # =====================================================
-# 3️⃣ DEPLOY TO AKS (FIXED)
+# 3️⃣ DEPLOY TO AKS (FIXED & STABLE)
 # =====================================================
   deploy:
     runs-on: ubuntu-latest
     needs: docker
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Setup kubectl
         uses: azure/setup-kubectl@v3
         with:
           version: v1.29.0
 
-      # ✅ FIXED kubeconfig handling
-      - name: Configure kubeconfig
+      # ✅ CRITICAL FIX — preserve multiline kubeconfig
+      - name: Write kubeconfig
         run: |
-          echo "${{ secrets.AKS_KUBECONFIG }}" > kubeconfig
-          export KUBECONFIG=$PWD/kubeconfig
-          kubectl config get-contexts
+          cat <<'EOF' > kubeconfig
+          ${{ secrets.AKS_KUBECONFIG }}
+          EOF
+          chmod 600 kubeconfig
 
-      # ✅ Debug cluster connection
+      # ✅ Explicit context verification (prevents localhost fallback)
+      - name: Verify Kubernetes context
+        run: |
+          kubectl --kubeconfig=$PWD/kubeconfig config get-contexts
+          kubectl --kubeconfig=$PWD/kubeconfig config current-context
+
+      # ✅ AKS connectivity check
       - name: Verify cluster access
         run: |
-          kubectl cluster-info
-          kubectl get nodes
+          kubectl --kubeconfig=$PWD/kubeconfig cluster-info
+          kubectl --kubeconfig=$PWD/kubeconfig get nodes
 
-      # ✅ CRITICAL FIX: disable OpenAPI validation
+      # ✅ Deploy application
       - name: Deploy to AKS
         run: |
-          kubectl apply -f k8s/ --validate=false
-          kubectl rollout status deployment/heart-api --timeout=180s
+          kubectl --kubeconfig=$PWD/kubeconfig apply -f k8s/ --validate=false
+          kubectl --kubeconfig=$PWD/kubeconfig rollout status deployment/heart-api --timeout=180s
