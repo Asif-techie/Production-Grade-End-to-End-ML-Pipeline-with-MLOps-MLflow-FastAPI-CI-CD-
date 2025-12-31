@@ -2,8 +2,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: heart-api
-  labels:
-    app: heart-api
 spec:
   replicas: 2
   selector:
@@ -17,21 +15,30 @@ spec:
       containers:
         - name: heart-api
           image: asiftech67/heart-api:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 80
           env:
             - name: MODEL_PATH
-              value: "models/LogisticRegression.pkl"
+              value: "/app/models/LogisticRegression.pkl"
             - name: MLFLOW_TRACKING_URI
               value: "file:///mlruns"
           resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
             limits:
               cpu: "500m"
               memory: "512Mi"
-          # Optional: Add liveness/readiness probe after verifying container works
-          # livenessProbe:
-          #   httpGet:
-          #     path: /health
-          #     port: 80
-          #   initialDelaySeconds: 15
-          #   periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: heart-api-service
+spec:
+  type: LoadBalancer
+  selector:
+    app: heart-api
+  ports:
+    - port: 80
+      targetPort: 80

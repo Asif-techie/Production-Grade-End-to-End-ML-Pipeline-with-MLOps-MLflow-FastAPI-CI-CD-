@@ -1,46 +1,22 @@
+# Use slim Python 3.11 image
 FROM python:3.11-slim
 
-# -----------------------------
-# Environment safety
-# -----------------------------
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-ENV MODEL_PATH=/app/models/model.pkl
-
-# -----------------------------
-# Working directory
-# -----------------------------
+# Set working directory
 WORKDIR /app
 
-# -----------------------------
 # Install dependencies
-# -----------------------------
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# -----------------------------
-# Copy application source
-# -----------------------------
+# Copy source code and trained model
 COPY src/ ./src
-
-# -----------------------------
-# Copy trained model (from CI)
-# Expected path: /app/models/model.pkl
-# -----------------------------
 COPY models/ ./models
 
-# -----------------------------
-# Validate model exists at build time
-# (Fail fast if CI is broken)
-# -----------------------------
-RUN test -f /app/models/model.pkl
+# Environment variable for model path
+ENV MODEL_PATH=/app/models/LogisticRegression.pkl
 
-# -----------------------------
 # Expose port
-# -----------------------------
 EXPOSE 80
 
-# -----------------------------
-# Start FastAPI
-# -----------------------------
+# Start the API
 CMD ["uvicorn", "src.app:app", "--host", "0.0.0.0", "--port", "80"]

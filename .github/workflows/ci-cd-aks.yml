@@ -1,140 +1,66 @@
-name: Heart Disease CI/CD
+name: CI/CD - Heart API to AKS
 
 on:
   push:
-    branches: [ main, dev ]
+    branches: [ "dev", "main" ]
   pull_request:
-    branches: [ main, dev ]
+    branches: [ "dev", "main" ]
 
-env:
-  MLFLOW_EXPERIMENT_NAME: HeartDisease_CI_CD
-  MLFLOW_TRACKING_URI: file://${{ github.workspace }}/mlruns
-  DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-  DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
-
-# =====================================================
-# 1️⃣ TRAIN + LOG MODEL
-# =====================================================
 jobs:
-  train:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install mlflow joblib
-
-      - name: Train model
-        run: |
-          python src/train.py
-
-      - name: Verify artifacts
-        run: |
-          echo "MLflow runs:"
-          ls -R mlruns || true
-          echo "Models:"
-          ls -R models || true
-
-      - name: Upload MLflow artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: mlruns
-          path: mlruns/
-
-      - name: Upload trained model
-        uses: actions/upload-artifact@v4
-        with:
-          name: model
-          path: models/
-
-# =====================================================
-# 2️⃣ BUILD + TEST + PUSH DOCKER IMAGE
-# =====================================================
-  docker:
-    runs-on: ubuntu-latest
-    needs: train
+    env:
+      IMAGE_NAME: asiftech67/heart-api
+      MODEL_PATH: models/LogisticRegression.pkl
+      K8S_MANIFEST: k8s/deployment.yaml
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    # 1️⃣ Checkout repository
+    - name: Checkout code
+      uses: actions/checkout@v3
 
-      - name: Download model artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: model
-          path: models/
+    # 2️⃣ Set up Python
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
 
-      - name: Docker login
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+    # 3️⃣ Install dependencies for training (optional if CI trains model)
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
 
-      - name: Build Docker image
-        run: |
-          docker build -t $DOCKER_USERNAME/heart-api:latest .
+    # 4️⃣ Log in to Docker Hub
+    - name: Log in to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Test container locally
-        run: |
-          docker run -d --name heart-test -p 8000:80 $DOCKER_USERNAME/heart-api:latest
-          sleep 15
-          curl -f http://localhost:8000/health
-          docker logs heart-test
-          docker stop heart-test
-          docker rm heart-test
+    # 5️⃣ Build Docker image
+    - name: Build Docker image
+      run: |
+        docker build -t $IMAGE_NAME:latest .
 
-      - name: Push Docker image
-        run: |
-          docker push $DOCKER_USERNAME/heart-api:latest
+    # 6️⃣ Push Docker image
+    - name: Push Docker image
+      run: |
+        docker push $IMAGE_NAME:latest
 
-# =====================================================
-# 3️⃣ DEPLOY TO AKS (FIXED & STABLE)
-# =====================================================
-  deploy:
-    runs-on: ubuntu-latest
-    needs: docker
+    # 7️⃣ Set up kubectl
+    - name: Set up kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.30.0'
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    # 8️⃣ Configure AKS credentials
+  
 
-      - name: Setup kubectl
-        uses: azure/setup-kubectl@v3
-        with:
-          version: v1.29.0
-
-      # ✅ CRITICAL FIX — preserve multiline kubeconfig
-      - name: Write kubeconfig
-        run: |
-          cat <<'EOF' > kubeconfig
-          ${{ secrets.AKS_KUBECONFIG }}
-          EOF
-          chmod 600 kubeconfig
-
-      # ✅ Explicit context verification (prevents localhost fallback)
-      - name: Verify Kubernetes context
-        run: |
-          kubectl --kubeconfig=$PWD/kubeconfig config get-contexts
-          kubectl --kubeconfig=$PWD/kubeconfig config current-context
-
-      # ✅ AKS connectivity check
-      - name: Verify cluster access
-        run: |
-          kubectl --kubeconfig=$PWD/kubeconfig cluster-info
-          kubectl --kubeconfig=$PWD/kubeconfig get nodes
-
-      # ✅ Deploy application
-      - name: Deploy to AKS
-        run: |
-          kubectl --kubeconfig=$PWD/kubeconfig apply -f k8s/ --validate=false
-          kubectl --kubeconfig=$PWD/kubeconfig rollout status deployment/heart-api --timeout=180s
+    # 9️⃣ Deploy to AKS
+    - name: Deploy to AKS
+      run: |
+        kubectl apply -f $K8S_MANIFEST --validate=false
+        kubectl rollout status deployment/heart-api
+        kubectl get pods -l app=heart-api
