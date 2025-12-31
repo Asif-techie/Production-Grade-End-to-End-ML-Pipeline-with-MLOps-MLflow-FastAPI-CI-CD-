@@ -1,57 +1,31 @@
-from fastapi import FastAPI, Request
-from pydantic import BaseModel
+from fastapi import FastAPI
 import joblib
-import numpy as np
-import logging
-from prometheus_fastapi_instrumentator import Instrumentator
-
-# Logging
-logging.basicConfig(level=logging.INFO)
-
-# Load model
-MODEL_PATH = "models/LogisticRegression.pkl"
-model = joblib.load(MODEL_PATH)
+import os
 
 app = FastAPI()
 
-# Prometheus metrics
-instrumentator = Instrumentator()
-instrumentator.instrument(app).expose(app)
+MODEL_PATH = os.getenv(
+    "MODEL_PATH",
+    "models/LogisticRegression.pkl"
+)
 
-# Middleware logging
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    logging.info(f"Request: {request.method} {request.url}")
-    response = await call_next(request)
-    logging.info(f"Response status: {response.status_code}")
-    return response
+@app.on_event("startup")
+def load_model():
+    global model
+    if not os.path.exists(MODEL_PATH):
+        raise FileNotFoundError(f"Model not found at {MODEL_PATH}")
+    model = joblib.load(MODEL_PATH)
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
-class HeartInput(BaseModel):
-    age: int
-    sex: int
-    cp: int
-    trestbps: int
-    chol: int
-    fbs: int
-    restecg: int
-    thalach: int
-    exang: int
-    oldpeak: float
-    slope: int
-    ca: int
-    thal: int
-
 @app.post("/predict")
-def predict(data: HeartInput):
-    X = np.array([[
-        data.age, data.sex, data.cp, data.trestbps, data.chol,
-        data.fbs, data.restecg, data.thalach, data.exang, data.oldpeak,
-        data.slope, data.ca, data.thal
-    ]])
-    pred = model.predict(X)
-    proba = model.predict_proba(X)[:, 1]
-    return {"prediction": int(pred[0]), "probability": float(proba[0])}
+def predict(payload: dict):
+    instances = payload.get("instances")
+    preds = model.predict(instances)
+    probs = model.predict_proba(instances).tolist()
+    return {
+        "prediction": preds.tolist(),
+        "probability": probs
+    }
