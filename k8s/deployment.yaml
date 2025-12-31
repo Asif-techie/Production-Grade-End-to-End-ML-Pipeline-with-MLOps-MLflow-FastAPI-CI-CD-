@@ -2,10 +2,13 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: heart-api
-  labels:
-    app: heart-api
 spec:
   replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app: heart-api
@@ -16,30 +19,35 @@ spec:
     spec:
       containers:
         - name: heart-api
-          image: asiftech67/heart-api:latest   # CI/CD pipeline pushes this image
+          image: asiftech67/heart-api:latest
           imagePullPolicy: Always
+
           ports:
-            - containerPort: 80
-          env:
-            - name: MODEL_PATH
-              value: "models/LogisticRegression.pkl"  # Matches Dockerfile ENV
+            - containerPort: 8000
+
+          # ✅ DO NOT override MODEL_PATH (or set it correctly)
+          # env:
+          #   - name: MODEL_PATH
+          #     value: /app/models/model.pkl
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 20
+            periodSeconds: 10
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 40
+            periodSeconds: 20
+
           resources:
             requests:
-              cpu: 500m
-              memory: 512Mi
+              cpu: "100m"
+              memory: "256Mi"
             limits:
-              cpu: 500m
-              memory: 512Mi
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: heart-api-service
-spec:
-  selector:
-    app: heart-api
-  type: LoadBalancer
-  ports:
-    - protocol: TCP
-      port: 80
-      targetPort: 80
+              cpu: "500m"
+              memory: "512Mi"
