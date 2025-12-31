@@ -40,9 +40,7 @@ jobs:
 
       - name: Verify artifacts
         run: |
-          echo "MLflow runs:"
           ls -R mlruns || true
-          echo "Models:"
           ls -R models || true
 
       - name: Upload MLflow artifacts
@@ -74,6 +72,10 @@ jobs:
           name: model
           path: models/
 
+      - name: Verify model exists
+        run: |
+          test -f models/model.pkl
+
       - name: Docker login
         uses: docker/login-action@v3
         with:
@@ -86,10 +88,11 @@ jobs:
 
       - name: Test container locally
         run: |
-          docker run -d --name heart-test -p 8000:80 $DOCKER_USERNAME/heart-api:latest
-          sleep 15
-          curl -f http://localhost:8000/health
+          docker run -d --name heart-test -p 8000:8000 $DOCKER_USERNAME/heart-api:latest
+          sleep 20
+          docker ps
           docker logs heart-test
+          curl -f http://localhost:8000/health
           docker stop heart-test
           docker rm heart-test
 
@@ -98,7 +101,7 @@ jobs:
           docker push $DOCKER_USERNAME/heart-api:latest
 
 # =====================================================
-# 3️⃣ DEPLOY TO AKS (FIXED & STABLE)
+# 3️⃣ DEPLOY TO AKS
 # =====================================================
   deploy:
     runs-on: ubuntu-latest
@@ -113,7 +116,6 @@ jobs:
         with:
           version: v1.29.0
 
-      # ✅ CRITICAL FIX — preserve multiline kubeconfig
       - name: Write kubeconfig
         run: |
           cat <<'EOF' > kubeconfig
@@ -121,19 +123,15 @@ jobs:
           EOF
           chmod 600 kubeconfig
 
-      # ✅ Explicit context verification (prevents localhost fallback)
       - name: Verify Kubernetes context
         run: |
           kubectl --kubeconfig=$PWD/kubeconfig config get-contexts
           kubectl --kubeconfig=$PWD/kubeconfig config current-context
 
-      # ✅ AKS connectivity check
       - name: Verify cluster access
         run: |
-          kubectl --kubeconfig=$PWD/kubeconfig cluster-info
           kubectl --kubeconfig=$PWD/kubeconfig get nodes
 
-      # ✅ Deploy application
       - name: Deploy to AKS
         run: |
           kubectl --kubeconfig=$PWD/kubeconfig apply -f k8s/ --validate=false
