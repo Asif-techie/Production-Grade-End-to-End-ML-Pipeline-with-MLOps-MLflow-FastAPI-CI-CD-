@@ -81,24 +81,21 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Build Docker image
-        run: |
-          docker build -t $DOCKER_USERNAME/heart-api:latest .
+        run: docker build -t $DOCKER_USERNAME/heart-api:latest .
 
       - name: Run container in CI
         run: |
           docker run -d --name heart-test -p 8000:8000 $DOCKER_USERNAME/heart-api:latest
-          echo "⏳ Waiting 25s for FastAPI to start"
+          echo "⏳ Waiting 25s for FastAPI to start and load model..."
           sleep 25
-          docker ps -a
+          echo "📝 Container logs:"
           docker logs heart-test || true
 
       - name: Verify /health endpoint
-        run: |
-          curl -f http://localhost:8000/health
+        run: curl -f http://localhost:8000/health
 
       - name: Verify /metrics endpoint
-        run: |
-          curl -f http://localhost:8000/metrics | grep http_requests_total || true
+        run: curl -f http://localhost:8000/metrics | grep http_requests_total || true
 
       - name: Verify /predict endpoint
         run: |
@@ -143,8 +140,7 @@ jobs:
           kubectl --kubeconfig=$PWD/kubeconfig config current-context
 
       - name: Verify cluster access
-        run: |
-          kubectl --kubeconfig=$PWD/kubeconfig get nodes
+        run: kubectl --kubeconfig=$PWD/kubeconfig get nodes
 
       - name: Deploy to AKS
         run: |
