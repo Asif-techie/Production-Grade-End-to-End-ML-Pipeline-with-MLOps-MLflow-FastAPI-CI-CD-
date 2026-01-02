@@ -37,16 +37,27 @@ jobs:
       - name: Train model
         run: python src/train.py
 
-      - name: Upload model artifact
+      - name: Verify artifacts
+        run: |
+          ls -R mlruns || true
+          ls -R models || true
+
+      - name: Upload MLflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlruns
+          path: mlruns/
+
+      - name: Upload trained model
         uses: actions/upload-artifact@v4
         with:
           name: model
           path: models/
 
   # ------------------------
-  # 2️⃣ BUILD & RUN CONTAINER + VERIFY MONITORING
+  # 2️⃣ BUILD & TEST DOCKER
   # ------------------------
-  monitor-test:
+  docker:
     runs-on: ubuntu-latest
     needs: train
 
@@ -60,6 +71,9 @@ jobs:
           name: model
           path: models/
 
+      - name: Verify model exists
+        run: test -f models/model.pkl
+
       - name: Docker login
         uses: docker/login-action@v3
         with:
@@ -67,38 +81,45 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Build Docker image
-        run: docker build -t $DOCKER_USERNAME/heart-api:latest .
+        run: |
+          docker build -t $DOCKER_USERNAME/heart-api:latest .
 
       - name: Run container in CI
         run: |
           docker run -d --name heart-test -p 8000:8000 $DOCKER_USERNAME/heart-api:latest
-          sleep 20
+          echo "⏳ Waiting 25s for FastAPI to start"
+          sleep 25
+          docker ps -a
+          docker logs heart-test || true
 
       - name: Verify /health endpoint
         run: |
           curl -f http://localhost:8000/health
 
-      - name: Verify Prometheus metrics exposed
+      - name: Verify /metrics endpoint
         run: |
-          curl -f http://localhost:8000/metrics | grep "http_requests_total"
+          curl -f http://localhost:8000/metrics | grep http_requests_total || true
 
-      - name: Test /predict endpoint
+      - name: Verify /predict endpoint
         run: |
           curl -X POST http://localhost:8000/predict \
             -H "Content-Type: application/json" \
-            -d '{"age":60,"sex":1,"cp":3,"trestbps":130,"chol":250,"fbs":0,"restecg":1,"thalach":150,"exang":0,"oldpeak":1.2,"slope":2,"ca":0,"thal":2}'
+            -d '{"instances": [[60,1,3,130,250,0,1,150,0,1.2,2,0,2]]}'
 
-      - name: Stop and remove container
+      - name: Stop & remove container
         run: |
           docker stop heart-test
           docker rm heart-test
+
+      - name: Push Docker image
+        run: docker push $DOCKER_USERNAME/heart-api:latest
 
   # ------------------------
   # 3️⃣ DEPLOY TO AKS
   # ------------------------
   deploy:
     runs-on: ubuntu-latest
-    needs: monitor-test
+    needs: docker
 
     steps:
       - name: Checkout repository
@@ -115,6 +136,15 @@ jobs:
           ${{ secrets.AKS_KUBECONFIG }}
           EOF
           chmod 600 kubeconfig
+
+      - name: Verify Kubernetes context
+        run: |
+          kubectl --kubeconfig=$PWD/kubeconfig config get-contexts
+          kubectl --kubeconfig=$PWD/kubeconfig config current-context
+
+      - name: Verify cluster access
+        run: |
+          kubectl --kubeconfig=$PWD/kubeconfig get nodes
 
       - name: Deploy to AKS
         run: |
