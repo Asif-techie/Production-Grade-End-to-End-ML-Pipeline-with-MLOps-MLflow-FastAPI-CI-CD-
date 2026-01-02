@@ -12,8 +12,14 @@ WORKDIR /app
 # Copy source code, models, and frontend
 # ------------------------
 COPY src/ ./src
-COPY frontend/ ./frontend
 COPY models/ ./models
+COPY frontend/ ./frontend
+
+# ------------------------
+# Set environment variables for paths
+# ------------------------
+ENV MODELS_PATH=/app/models
+ENV FRONTEND_PATH=/app/frontend
 
 # ------------------------
 # Install dependencies
@@ -27,6 +33,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 EXPOSE 8000
 
 # ------------------------
-# Run FastAPI with Prometheus instrumentation
+# Run FastAPI with Prometheus monitoring
 # ------------------------
-CMD ["uvicorn", "src.app:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["uvicorn", "src.app:app", "--host", "0.0.0.0", "--port", "8000"]
