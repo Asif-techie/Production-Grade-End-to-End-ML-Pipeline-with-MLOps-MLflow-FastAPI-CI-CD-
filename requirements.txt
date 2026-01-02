@@ -14,3 +14,4 @@ flake8
 xgboost
 catboost
 ucimlrepo
+prometheus-fastapi-instrumentator

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Heart Disease Prediction</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; }
+        input, button { padding: 8px; margin: 5px 0; width: 100%; }
+        .result { margin-top: 20px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>Heart Disease Prediction</h1>
+    <form id="predict-form">
+        <label>Enter features (comma separated):</label>
+        <input type="text" id="features" placeholder="e.g. 63,1,3,145,233,1,0,150,0,2.3,0,0,1">
+        <button type="submit">Predict</button>
+    </form>
+    <div class="result" id="result"></div>
+
+    <script>
+        const form = document.getElementById("predict-form");
+        const resultDiv = document.getElementById("result");
+
+        form.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const input = document.getElementById("features").value;
+            const features = input.split(",").map(Number);
+
+            const payload = { instances: [features] };
+
+            try {
+                const res = await fetch("/predict", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    resultDiv.innerHTML = `Prediction: ${data.prediction[0]} <br> Probability: [${data.probability[0].map(p => p.toFixed(2)).join(", ")}]`;
+                } else {
+                    resultDiv.innerHTML = `Error: ${data.detail}`;
+                }
+            } catch (err) {
+                resultDiv.innerHTML = `Error: ${err.message}`;
+            }
+        });
+    </script>
+</body>
+</html>
