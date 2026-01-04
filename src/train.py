@@ -8,18 +8,44 @@ Production-grade training script:
 - Saves the BEST trained model locally for Docker deployment
 """
 
+# ======================================================
+# GLOBAL WARNING SUPPRESSION (SKLEARN 1.6 + MLFLOW)
+# DO NOT MOVE THIS BLOCK
+# ======================================================
+import os
+import warnings
+
+# Suppress warnings in joblib / multiprocessing child processes
+os.environ["PYTHONWARNINGS"] = "ignore"
+
+# Suppress all warnings in main process
+warnings.filterwarnings("ignore")
+
+# ---------------- NEW: suppress only MLflow deprecation warnings ----------------
+warnings.filterwarnings(
+    "ignore",
+    message="`artifact_path` is deprecated",
+    category=UserWarning
+)
+warnings.filterwarnings(
+    "ignore",
+    message="Model logged without a signature and input example",
+    category=UserWarning
+)
+# ======================================================
+
 import matplotlib
 matplotlib.use("Agg")
 
-import os
 import tempfile
 import joblib
 import mlflow
 import mlflow.sklearn
 from math import prod
+from mlflow.models.signature import infer_signature
 
 from sklearn.model_selection import train_test_split, GridSearchCV, RandomizedSearchCV
-from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
+from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score
 
 from pipeline import pipelines, param_spaces, search_type
 from data import load_heart_data
@@ -119,6 +145,8 @@ def main():
                 acc = accuracy_score(y_test, y_pred)
                 f1 = f1_score(y_test, y_pred)
                 roc = roc_auc_score(y_test, y_score)
+                precision = precision_score(y_test, y_pred)
+                recall = recall_score(y_test, y_pred)
 
                 # Log params
                 for k, v in search.best_params_.items():
@@ -128,6 +156,8 @@ def main():
                 mlflow.log_metric("accuracy", acc)
                 mlflow.log_metric("f1_score", f1)
                 mlflow.log_metric("roc_auc", roc)
+                mlflow.log_metric("precision", precision)
+                mlflow.log_metric("recall", recall)
 
                 # -------- Save plots -------- #
                 tmpdir = tempfile.mkdtemp()
@@ -140,12 +170,18 @@ def main():
                 save_roc(y_test, y_score, roc_path)
                 mlflow.log_artifact(roc_path, artifact_path="artifacts")
 
-                # -------- Log model to MLflow -------- #
-                mlflow.sklearn.log_model(best_model, artifact_path=name)
+                # -------- Log model to MLflow (fixed warnings) -------- #
+                signature = infer_signature(X_test, best_model.predict(X_test))
+                mlflow.sklearn.log_model(
+                    sk_model=best_model,
+                    name=name,                   # use `name` instead of deprecated `artifact_path`
+                    signature=signature,         # model signature
+                    input_example=X_test.head(5) # small input example
+                )
 
                 print(
-                    f"✅ {name} | Accuracy={acc:.3f}, "
-                    f"F1={f1:.3f}, ROC_AUC={roc:.3f}"
+                    f"✅ {name} | Accuracy={acc:.3f}, F1={f1:.3f}, "
+                    f"ROC_AUC={roc:.3f}, Precision={precision:.3f}, Recall={recall:.3f}"
                 )
 
                 # -------- Track BEST model -------- #
