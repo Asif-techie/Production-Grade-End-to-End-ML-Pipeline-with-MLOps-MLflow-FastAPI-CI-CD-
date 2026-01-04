@@ -13,9 +13,9 @@ env:
   DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
 
 jobs:
-  # ------------------------
-  # 1️⃣ TRAIN MODEL
-  # ------------------------
+# =====================================================
+# 1️⃣ TRAIN MODEL
+# =====================================================
   train:
     runs-on: ubuntu-latest
 
@@ -37,11 +37,6 @@ jobs:
       - name: Train model
         run: python src/train.py
 
-      - name: Verify artifacts
-        run: |
-          ls -R mlruns || true
-          ls -R models || true
-
       - name: Upload MLflow artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -54,16 +49,15 @@ jobs:
           name: model
           path: models/
 
-  # ------------------------
-  # 2️⃣ BUILD & TEST DOCKER
-  # ------------------------
+# =====================================================
+# 2️⃣ BUILD, TEST & PUSH DOCKER
+# =====================================================
   docker:
     runs-on: ubuntu-latest
     needs: train
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Download model artifact
         uses: actions/download-artifact@v4
@@ -71,10 +65,7 @@ jobs:
           name: model
           path: models/
 
-      - name: Verify model exists
-        run: test -f models/model.pkl
-
-      - name: Docker login
+      - name: Docker Login
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
@@ -83,27 +74,24 @@ jobs:
       - name: Build Docker image
         run: docker build -t $DOCKER_USERNAME/heart-api:latest .
 
-      - name: Run container in CI
+      - name: Run container for tests
         run: |
-          docker run -d --name heart-test -p 8000:8000 $DOCKER_USERNAME/heart-api:latest
-          echo "⏳ Waiting 25s for FastAPI to start and load model..."
+          docker run -d -p 8000:8000 --name heart-test $DOCKER_USERNAME/heart-api:latest
           sleep 25
-          echo "📝 Container logs:"
-          docker logs heart-test || true
 
-      - name: Verify /health endpoint
+      - name: Verify /health
         run: curl -f http://localhost:8000/health
 
-      - name: Verify /metrics endpoint
-        run: curl -f http://localhost:8000/metrics | grep http_requests_total || true
+      - name: Verify /metrics
+        run: curl -f http://localhost:8000/metrics | grep http_requests_total
 
-      - name: Verify /predict endpoint
+      - name: Verify /predict
         run: |
           curl -X POST http://localhost:8000/predict \
-            -H "Content-Type: application/json" \
-            -d '{"instances": [[60,1,3,130,250,0,1,150,0,1.2,2,0,2]]}'
+          -H "Content-Type: application/json" \
+          -d '{"instances": [[60,1,3,130,250,0,1,150,0,1.2,2,0,2]]}'
 
-      - name: Stop & remove container
+      - name: Cleanup container
         run: |
           docker stop heart-test
           docker rm heart-test
@@ -111,16 +99,15 @@ jobs:
       - name: Push Docker image
         run: docker push $DOCKER_USERNAME/heart-api:latest
 
-  # ------------------------
-  # 3️⃣ DEPLOY TO AKS
-  # ------------------------
+# =====================================================
+# 3️⃣ DEPLOY & VERIFY ON AKS
+# =====================================================
   deploy:
     runs-on: ubuntu-latest
     needs: docker
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Setup kubectl
         uses: azure/setup-kubectl@v3
@@ -129,53 +116,58 @@ jobs:
 
       - name: Write kubeconfig
         run: |
-          cat <<'EOF' > kubeconfig
-          ${{ secrets.AKS_KUBECONFIG }}
-          EOF
+          echo "${{ secrets.AKS_KUBECONFIG }}" > kubeconfig
           chmod 600 kubeconfig
 
-      - name: Verify Kubernetes context
+      - name: Create monitoring namespace
+        run: kubectl --kubeconfig=kubeconfig create namespace monitoring || true
+
+      - name: Deploy Kubernetes manifests
         run: |
-          kubectl --kubeconfig=$PWD/kubeconfig config get-contexts
-          kubectl --kubeconfig=$PWD/kubeconfig config current-context
+          kubectl --kubeconfig=kubeconfig apply -f k8s/ --validate=false
 
-      - name: Verify cluster access
-        run: kubectl --kubeconfig=$PWD/kubeconfig get nodes
-
-      - name: Deploy Heart API & Monitoring stack
+      - name: Wait for Heart API pods
         run: |
-          kubectl --kubeconfig=$PWD/kubeconfig create namespace monitoring || true
-          kubectl --kubeconfig=$PWD/kubeconfig apply -f k8s/ --validate=false
-          kubectl --kubeconfig=$PWD/kubeconfig rollout status deployment/heart-api --timeout=180s
-          kubectl --kubeconfig=$PWD/kubeconfig rollout status deployment/prometheus --namespace monitoring --timeout=180s
-          kubectl --kubeconfig=$PWD/kubeconfig rollout status deployment/grafana --namespace monitoring --timeout=180s
+          kubectl --kubeconfig=kubeconfig wait \
+          --for=condition=ready pod \
+          -l app=heart-api \
+          --timeout=180s
 
-      - name: Verify Heart API service
-        run: kubectl --kubeconfig=$PWD/kubeconfig get svc heart-api-service
+      - name: Wait for Prometheus & Grafana
+        run: |
+          kubectl --kubeconfig=kubeconfig wait --for=condition=available deployment/prometheus -n monitoring --timeout=180s
+          kubectl --kubeconfig=kubeconfig wait --for=condition=available deployment/grafana -n monitoring --timeout=180s
 
-      - name: Port-forward Heart API for tests
-        run: kubectl --kubeconfig=$PWD/kubeconfig port-forward svc/heart-api-service 8000:80 & sleep 10
+# ---------------- PORT FORWARD ----------------
+      - name: Port-forward Heart API
+        run: |
+          kubectl --kubeconfig=kubeconfig port-forward svc/heart-api-service 8000:80 &
+          sleep 15
 
-      - name: Verify /health endpoint on AKS
+      - name: Verify /health on AKS
         run: curl -f http://localhost:8000/health
 
-      - name: Verify /metrics endpoint on AKS
-        run: curl -f http://localhost:8000/metrics | grep http_requests_total || true
+      - name: Verify /metrics on AKS
+        run: curl -f http://localhost:8000/metrics | grep http_requests_total
 
-      - name: Verify /predict endpoint on AKS
+      - name: Verify /predict on AKS
         run: |
           curl -X POST http://localhost:8000/predict \
-            -H "Content-Type: application/json" \
-            -d '{"instances": [[60,1,3,130,250,0,1,150,0,1.2,2,0,2]]}'
+          -H "Content-Type: application/json" \
+          -d '{"instances": [[60,1,3,130,250,0,1,150,0,1.2,2,0,2]]}'
 
-      - name: Port-forward Prometheus for verification
-        run: kubectl --kubeconfig=$PWD/kubeconfig -n monitoring port-forward svc/prometheus 9090:9090 & sleep 5
+# ---------------- PROMETHEUS ----------------
+      - name: Port-forward Prometheus
+        run: |
+          kubectl --kubeconfig=kubeconfig -n monitoring port-forward svc/prometheus 9090:9090 &
+          sleep 10
 
-      - name: Verify Prometheus metrics
-        run: curl -s http://localhost:9090/metrics | grep heart_api || true
+      - name: Verify Prometheus is scraping
+        run: curl -s http://localhost:9090/metrics | grep prometheus_http_requests_total
 
-      - name: Port-forward Grafana for verification
-        run: kubectl --kubeconfig=$PWD/kubeconfig -n monitoring port-forward svc/grafana 3000:80 & sleep 5
-
-      - name: Grafana login info
-        run: echo "Grafana is available at http://localhost:3000 with user=admin / pass=admin123"
+# ---------------- GRAFANA ----------------
+      - name: Grafana Access Info
+        run: |
+          echo "Grafana URL: http://<EXTERNAL-IP>"
+          echo "Username: admin"
+          echo "Password: admin123"
