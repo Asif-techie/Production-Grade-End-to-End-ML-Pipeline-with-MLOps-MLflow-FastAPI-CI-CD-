@@ -9,9 +9,21 @@ Sorted by Start Time (newest first), timestamps shown in IST.
 """
 
 from datetime import timedelta, timezone
+import sys
+import subprocess
+
+# -----------------------------
+# Ensure tabulate is installed
+# -----------------------------
+try:
+    from tabulate import tabulate
+except ModuleNotFoundError:
+    print("📦 'tabulate' not found. Installing...")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "tabulate"])
+    from tabulate import tabulate
 
 import mlflow
-from tabulate import tabulate
+import pandas as pd
 
 # -----------------------------
 # Config
@@ -29,7 +41,7 @@ IST = timezone(timedelta(hours=5, minutes=30))
 exp = mlflow.get_experiment_by_name(EXPERIMENT_NAME)
 if exp is None:
     print(f"❌ Experiment '{EXPERIMENT_NAME}' not found!")
-    exit(1)
+    sys.exit(1)
 
 # -----------------------------
 # Fetch all runs
@@ -37,7 +49,7 @@ if exp is None:
 runs = mlflow.search_runs([exp.experiment_id])
 if runs.empty:
     print(f"⚠ No runs found for experiment '{EXPERIMENT_NAME}'")
-    exit(0)
+    sys.exit(0)
 
 # -----------------------------
 # Sort runs by start_time descending
@@ -62,15 +74,15 @@ for idx, row in runs.iterrows():
     start_ts = row.get("start_time", None)
     end_ts = row.get("end_time", None)
 
-    # Convert timestamps to IST
+    # Convert timestamps to IST safely
     start_time = (
-        start_ts.tz_convert(IST).strftime("%Y-%m-%d %H:%M:%S")
-        if start_ts is not None
+        pd.to_datetime(start_ts).tz_convert(IST).strftime("%Y-%m-%d %H:%M:%S")
+        if pd.notna(start_ts)
         else "-"
     )
     end_time = (
-        end_ts.tz_convert(IST).strftime("%Y-%m-%d %H:%M:%S")
-        if end_ts is not None
+        pd.to_datetime(end_ts).tz_convert(IST).strftime("%Y-%m-%d %H:%M:%S")
+        if pd.notna(end_ts)
         else "-"
     )
 
