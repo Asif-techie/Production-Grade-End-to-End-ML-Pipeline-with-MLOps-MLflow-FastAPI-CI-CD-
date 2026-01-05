@@ -3,8 +3,13 @@ name: Heart Disease CI/CD + Monitoring Verification
 on:
   push:
     branches: [ main, dev ]
+    paths-ignore:
+      - 'screenshots/**'
   pull_request:
     branches: [ main, dev ]
+
+    paths-ignore:
+      - 'screenshots/**'
 
 env:
   MLFLOW_EXPERIMENT_NAME: HeartDisease_CI_CD
