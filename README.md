@@ -1,4 +1,4 @@
-## 📌 Project Overview
+## Project Overview
 
 This project implements an end-to-end, production-grade **MLOps pipeline** for heart disease prediction. It covers the complete machine learning lifecycle—from data preprocessing and model training to experiment tracking, containerized deployment and post-deployment monitoring.  
 
@@ -6,7 +6,7 @@ The architecture emphasizes **reproducibility, scalability and reliability**, fo
 
 ---
 
-## 🚀 Key Features
+## Key Features
 
 - **Full ML Lifecycle:** Complete process from data to deployment and monitoring.  
 - **Production-Ready:** Designed for scalability, reproducibility, and reliability.  
