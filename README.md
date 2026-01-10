@@ -2,6 +2,10 @@
 
 Production-ready ML workflow with EDA, feature engineering, model development and FastAPI deployment.
 
+## Development Branch
+
+Please refer to the 'dev' branch for the detailed workflow and full source code implementation.
+
 ---
 
 ## Project Overview
